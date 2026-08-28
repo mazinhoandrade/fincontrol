@@ -1,0 +1,14 @@
+[4mWHO           [0m[4m [0m[4mUID [0m[4m [0m[4mUSER      [0m[4m [0m[4mPID  [0m[4m [0m[4mCOMM          [0m[4m [0m[4mWHAT                                                    [0m[4m [0m[4mWHY                                                        [0m[4m [0m[4mMODE [0m
+ModemManager   0    root       1123  ModemManager   sleep                                                    ModemManager needs to reset devices                         delay
+NetworkManager 0    root       1204  NetworkManager sleep                                                    NetworkManager needs to turn off networks                   delay
+UPower         0    root       69759 upowerd        sleep                                                    Pause device polling                                        delay
+GNOME Shell    1000 mazinhodev 4296  gnome-shell    sleep                                                    GNOME precisa bloquear a tela                               delay
+GNOME Shell    1000 mazinhodev 4296  gnome-shell    sleep                                                    GNOME precisa salvar dados de tempo de tela                 delay
+code           1000 mazinhodev 31063 code           shutdown                                                 Ensure a clean shutdown                                     delay
+code           1000 mazinhodev 31063 code           sleep                                                    Application cleanup before suspend                          delay
+mazinhodev     1000 mazinhodev 4507  gsd-power      handle-lid-switch                                        External monitor attached or configuration changed recently block
+mazinhodev     1000 mazinhodev 4502  gsd-media-keys handle-power-key:handle-suspend-key:handle-hibernate-key GNOME handling keypresses                                   block
+mazinhodev     1000 mazinhodev 4502  gsd-media-keys sleep                                                    GNOME handling keypresses                                   delay
+mazinhodev     1000 mazinhodev 4507  gsd-power      sleep                                                    GNOME needs to lock the screen                              delay
+
+11 inhibitors listed.
