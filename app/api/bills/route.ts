@@ -58,7 +58,7 @@ export async function PUT(request: Request) {
     }
 
     if (action === 'pay') {
-      const result = await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx: any) => {
         const bill = await tx.bill.findUnique({ where: { id } });
         if (!bill) throw new Error('Bill not found');
 
@@ -103,7 +103,7 @@ export async function PUT(request: Request) {
     }
 
     if (action === 'unpay') {
-      const result = await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx: any) => {
         const bill = await tx.bill.findUnique({ where: { id } });
         if (!bill) throw new Error('Bill not found');
 

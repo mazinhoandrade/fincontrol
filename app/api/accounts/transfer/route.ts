@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
     const today = new Date().toISOString().split('T')[0];
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const fromAcc = await tx.account.findUnique({ where: { id: fromId } });
       const toAcc = await tx.account.findUnique({ where: { id: toId } });
 

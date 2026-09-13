@@ -6,7 +6,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { id, description, amount, type, categoryId, accountId, date, notes, billId } = body;
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const transaction = await tx.transaction.create({
         data: {
           id: id || undefined,
@@ -51,7 +51,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Transaction ID is required' }, { status: 400 });
     }
 
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       const oldTx = await tx.transaction.findUnique({ where: { id } });
       if (!oldTx) {
         throw new Error('Transaction not found');
@@ -116,7 +116,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Transaction ID is required' }, { status: 400 });
     }
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: any) => {
       const oldTx = await tx.transaction.findUnique({ where: { id } });
       if (!oldTx) return;
 

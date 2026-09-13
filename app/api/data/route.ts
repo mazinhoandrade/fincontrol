@@ -105,7 +105,7 @@ export async function GET() {
       transactions,
       bills,
       categories,
-      readNotifIds: readNotifs.map((n) => n.id),
+      readNotifIds: readNotifs.map((n: { id: string }) => n.id),
     });
   } catch (error) {
     console.error('Error fetching data from Neon DB:', error);
