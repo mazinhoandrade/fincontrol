@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Account,
@@ -9,14 +9,7 @@ import {
   Category,
   NotificationItem,
   Transaction,
-  TransactionType,
 } from '@/lib/types';
-import {
-  initialAccounts,
-  initialBills,
-  initialCategories,
-  initialTransactions,
-} from '@/lib/initialData';
 import { getDaysDifference, formatCurrency, formatDate } from '@/lib/utils';
 
 interface FinanceContextType {
@@ -28,6 +21,10 @@ interface FinanceContextType {
   unreadNotificationsCount: number;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+  // Neon DB status
+  isDbConnected: boolean;
+  isLoading: boolean;
+  refreshData: () => Promise<void>;
   // Stats
   totalBalance: number;
   currentMonthIncome: number;
@@ -39,105 +36,85 @@ interface FinanceContextType {
   upcomingBillsCount: number;
   upcomingBillsTotal: number;
   // Actions - Transactions
-  addTransaction: (tx: Omit<Transaction, 'id'>) => Transaction;
-  editTransaction: (id: string, tx: Partial<Transaction>) => void;
-  deleteTransaction: (id: string) => void;
+  addTransaction: (tx: Omit<Transaction, 'id'>) => Promise<Transaction | null>;
+  editTransaction: (id: string, tx: Partial<Transaction>) => Promise<void>;
+  deleteTransaction: (id: string) => Promise<void>;
   // Actions - Bills
-  addBill: (bill: Omit<Bill, 'id' | 'status'>) => Bill;
-  editBill: (id: string, bill: Partial<Bill>) => void;
-  deleteBill: (id: string) => void;
-  payBill: (billId: string, accountId: string, paidDate?: string) => void;
-  unpayBill: (billId: string) => void;
+  addBill: (bill: Omit<Bill, 'id' | 'status'>) => Promise<Bill>;
+  editBill: (id: string, bill: Partial<Bill>) => Promise<void>;
+  deleteBill: (id: string) => Promise<void>;
+  payBill: (billId: string, accountId: string, paidDate?: string) => Promise<void>;
+  unpayBill: (billId: string) => Promise<void>;
   // Actions - Accounts
-  addAccount: (acc: Omit<Account, 'id'>) => Account;
-  editAccount: (id: string, acc: Partial<Account>) => void;
-  deleteAccount: (id: string) => void;
-  transferBetweenAccounts: (fromId: string, toId: string, amount: number, description?: string) => void;
+  addAccount: (acc: Omit<Account, 'id'>) => Promise<Account>;
+  editAccount: (id: string, acc: Partial<Account>) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
+  transferBetweenAccounts: (fromId: string, toId: string, amount: number, description?: string) => Promise<void>;
   // Actions - Categories
-  addCategory: (cat: Omit<Category, 'id'>) => Category;
-  editCategory: (id: string, cat: Partial<Category>) => void;
-  deleteCategory: (id: string) => void;
+  addCategory: (cat: Omit<Category, 'id'>) => Promise<Category>;
+  editCategory: (id: string, cat: Partial<Category>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
   // Actions - Notifications
-  markNotificationAsRead: (id: string) => void;
-  markAllNotificationsAsRead: () => void;
+  markNotificationAsRead: (id: string) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
   // Reset
-  resetToDemoData: () => void;
+  resetToDemoData: () => Promise<void>;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
-const STORAGE_KEYS = {
-  ACCOUNTS: 'fincontrol_accounts_v1',
-  TRANSACTIONS: 'fincontrol_transactions_v1',
-  BILLS: 'fincontrol_bills_v1',
-  CATEGORIES: 'fincontrol_categories_v1',
-  READ_NOTIFS: 'fincontrol_read_notifs_v1',
-};
-
 export function FinanceProvider({ children }: { children: ReactNode }) {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDbConnected, setIsDbConnected] = useState(false);
 
+  // States solely populated from Neon DB
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [readNotifIds, setReadNotifIds] = useState<string[]>([]);
 
-  // Load from localStorage or initialize with seed data
-  useEffect(() => {
+  // Function to fetch fresh data directly from Neon DB
+  const refreshData = useCallback(async () => {
     try {
-      const savedAccounts = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
-      const savedTransactions = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-      const savedBills = localStorage.getItem(STORAGE_KEYS.BILLS);
-      const savedCategories = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
-      const savedReadNotifs = localStorage.getItem(STORAGE_KEYS.READ_NOTIFS);
-
-      setAccounts(savedAccounts ? JSON.parse(savedAccounts) : initialAccounts);
-      setTransactions(savedTransactions ? JSON.parse(savedTransactions) : initialTransactions);
-      setBills(savedBills ? JSON.parse(savedBills) : initialBills);
-      setCategories(savedCategories ? JSON.parse(savedCategories) : initialCategories);
-      setReadNotifIds(savedReadNotifs ? JSON.parse(savedReadNotifs) : []);
-    } catch (e) {
-      console.error('Error loading localStorage data', e);
-      setAccounts(initialAccounts);
-      setTransactions(initialTransactions);
-      setBills(initialBills);
-      setCategories(initialCategories);
+      const res = await fetch('/api/data', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setAccounts(data.accounts || []);
+          setTransactions(data.transactions || []);
+          setBills(data.bills || []);
+          setCategories(data.categories || []);
+          setReadNotifIds(data.readNotifIds || []);
+          setIsDbConnected(true);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao conectar e buscar dados do Neon DB:', err);
+      setIsDbConnected(false);
     } finally {
-      setIsLoaded(true);
+      setIsLoading(false);
     }
   }, []);
 
-  // Sync to localStorage
+  // Fetch from Neon DB on mount and clear old localStorage
   useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
-  }, [accounts, isLoaded]);
+    try {
+      localStorage.removeItem('fincontrol_accounts_v1');
+      localStorage.removeItem('fincontrol_transactions_v1');
+      localStorage.removeItem('fincontrol_bills_v1');
+      localStorage.removeItem('fincontrol_categories_v1');
+      localStorage.removeItem('fincontrol_read_notifs_v1');
+    } catch {
+      // ignore
+    }
 
-  useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
-  }, [transactions, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem(STORAGE_KEYS.BILLS, JSON.stringify(bills));
-  }, [bills, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
-  }, [categories, isLoaded]);
-
-  useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem(STORAGE_KEYS.READ_NOTIFS, JSON.stringify(readNotifIds));
-  }, [readNotifIds, isLoaded]);
+    refreshData();
+  }, [refreshData]);
 
   // Update bill statuses automatically based on current date
   useEffect(() => {
-    if (!isLoaded) return;
     let hasChanges = false;
     const updatedBills = bills.map((bill) => {
       if (bill.status === 'paid') return bill;
@@ -153,7 +130,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     if (hasChanges) {
       setBills(updatedBills);
     }
-  }, [isLoaded, bills]);
+  }, [bills]);
 
   // Generate Notifications
   const notifications: NotificationItem[] = useMemo(() => {
@@ -202,7 +179,6 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
     });
 
     return notifs.sort((a, b) => {
-      // Order overdue first, then today, then soon
       const order = { overdue: 0, due_today: 1, due_soon: 2, info: 3 };
       return order[a.type] - order[b.type];
     });
@@ -279,60 +255,81 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   }, [bills]);
 
   // Transaction Actions
-  const addTransaction = (txData: Omit<Transaction, 'id'>): Transaction => {
-    const newTx: Transaction = {
-      ...txData,
-      id: 'tx-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-    };
+  const addTransaction = async (txData: Omit<Transaction, 'id'>): Promise<Transaction | null> => {
+    const tempId = 'tx-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    const optimisticTx: Transaction = { ...txData, id: tempId };
 
-    setTransactions((prev) => [newTx, ...prev]);
+    setTransactions((prev) => [optimisticTx, ...prev]);
 
-    // Update account balance
     setAccounts((prev) =>
       prev.map((acc) => {
-        if (acc.id === newTx.accountId) {
-          const delta = newTx.type === 'income' ? newTx.amount : -newTx.amount;
+        if (acc.id === txData.accountId) {
+          const delta = txData.type === 'income' ? txData.amount : -txData.amount;
           return { ...acc, balance: (acc.balance || 0) + delta };
         }
         return acc;
       })
     );
 
-    return newTx;
+    try {
+      const res = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(txData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.transaction) {
+          setTransactions((prev) =>
+            prev.map((t) => (t.id === tempId ? data.transaction : t))
+          );
+          return data.transaction;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao salvar transação no Neon DB:', err);
+    }
+    return optimisticTx;
   };
 
-  const editTransaction = (id: string, updatedData: Partial<Transaction>) => {
+  const editTransaction = async (id: string, updatedData: Partial<Transaction>) => {
     const oldTx = transactions.find((t) => t.id === id);
     if (!oldTx) return;
 
     const newTx = { ...oldTx, ...updatedData };
-
     setTransactions((prev) => prev.map((t) => (t.id === id ? newTx : t)));
 
-    // Revert old impact and apply new impact to account balance(s)
     setAccounts((prev) =>
       prev.map((acc) => {
         let balance = acc.balance || 0;
-        // Revert old
         if (acc.id === oldTx.accountId) {
           balance -= oldTx.type === 'income' ? oldTx.amount : -oldTx.amount;
         }
-        // Apply new
         if (acc.id === newTx.accountId) {
           balance += newTx.type === 'income' ? newTx.amount : -newTx.amount;
         }
         return { ...acc, balance };
       })
     );
+
+    try {
+      await fetch('/api/transactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updatedData }),
+      });
+    } catch (err) {
+      console.error('Erro ao atualizar transação no Neon DB:', err);
+    }
   };
 
-  const deleteTransaction = (id: string) => {
+  const deleteTransaction = async (id: string) => {
     const tx = transactions.find((t) => t.id === id);
     if (!tx) return;
 
     setTransactions((prev) => prev.filter((t) => t.id !== id));
 
-    // Revert account balance
     setAccounts((prev) =>
       prev.map((acc) => {
         if (acc.id === tx.accountId) {
@@ -342,22 +339,49 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         return acc;
       })
     );
+
+    try {
+      await fetch(`/api/transactions?id=${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Erro ao deletar transação no Neon DB:', err);
+    }
   };
 
   // Bill Actions
-  const addBill = (billData: Omit<Bill, 'id' | 'status'>): Bill => {
+  const addBill = async (billData: Omit<Bill, 'id' | 'status'>): Promise<Bill> => {
     const daysDiff = getDaysDifference(billData.dueDate);
-    const newBill: Bill = {
+    const tempId = 'bill-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    const optimisticBill: Bill = {
       ...billData,
-      id: 'bill-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      id: tempId,
       status: daysDiff < 0 ? 'overdue' : 'pending',
     };
 
-    setBills((prev) => [newBill, ...prev]);
-    return newBill;
+    setBills((prev) => [optimisticBill, ...prev]);
+
+    try {
+      const res = await fetch('/api/bills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(billData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.bill) {
+          setBills((prev) =>
+            prev.map((b) => (b.id === tempId ? data.bill : b))
+          );
+          return data.bill;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao salvar conta no Neon DB:', err);
+    }
+    return optimisticBill;
   };
 
-  const editBill = (id: string, updatedData: Partial<Bill>) => {
+  const editBill = async (id: string, updatedData: Partial<Bill>) => {
     setBills((prev) =>
       prev.map((b) => {
         if (b.id === id) {
@@ -371,36 +395,53 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         return b;
       })
     );
+
+    try {
+      await fetch('/api/bills', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updatedData }),
+      });
+    } catch (err) {
+      console.error('Erro ao atualizar conta no Neon DB:', err);
+    }
   };
 
-  const deleteBill = (id: string) => {
+  const deleteBill = async (id: string) => {
     setBills((prev) => prev.filter((b) => b.id !== id));
+
+    try {
+      await fetch(`/api/bills?id=${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Erro ao deletar conta no Neon DB:', err);
+    }
   };
 
-  const payBill = (billId: string, accountId: string, paidDate?: string) => {
+  const payBill = async (billId: string, accountId: string, paidDate?: string) => {
     const bill = bills.find((b) => b.id === billId);
     if (!bill) return;
 
     const actualPaidDate = paidDate || new Date().toISOString().split('T')[0];
 
-    // Mark bill as paid
+    // Optimistically mark as paid
     setBills((prev) =>
       prev.map((b) => (b.id === billId ? { ...b, status: 'paid', paidAt: actualPaidDate, accountId } : b))
     );
 
-    // Create automatic expense transaction
-    addTransaction({
-      description: `Pagamento: ${bill.title}`,
-      amount: bill.amount,
-      type: 'expense',
-      categoryId: bill.categoryId,
-      accountId: accountId,
-      date: actualPaidDate,
-      billId: bill.id,
-      notes: bill.recipient ? `Favorecido: ${bill.recipient}` : undefined,
-    });
+    try {
+      const res = await fetch('/api/bills', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: billId, action: 'pay', accountId, paidDate: actualPaidDate }),
+      });
 
-    // Fire confetti celebratory effect
+      if (res.ok) {
+        await refreshData();
+      }
+    } catch (err) {
+      console.error('Erro ao pagar conta no Neon DB:', err);
+    }
+
     try {
       confetti({
         particleCount: 80,
@@ -409,117 +450,208 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         colors: ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b'],
       });
     } catch {
-      // ignore in environments without canvas
+      // ignore
     }
   };
 
-  const unpayBill = (billId: string) => {
+  const unpayBill = async (billId: string) => {
     const bill = bills.find((b) => b.id === billId);
     if (!bill) return;
 
-    const daysDiff = getDaysDifference(bill.dueDate);
-    const newStatus = daysDiff < 0 ? 'overdue' : 'pending';
+    try {
+      const res = await fetch('/api/bills', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: billId, action: 'unpay' }),
+      });
 
-    // Reset bill
-    setBills((prev) =>
-      prev.map((b) => (b.id === billId ? { ...b, status: newStatus, paidAt: undefined } : b))
-    );
-
-    // Find and remove linked transaction
-    const linkedTx = transactions.find((t) => t.billId === billId);
-    if (linkedTx) {
-      deleteTransaction(linkedTx.id);
+      if (res.ok) {
+        await refreshData();
+      }
+    } catch (err) {
+      console.error('Erro ao cancelar pagamento de conta no Neon DB:', err);
     }
   };
 
   // Account Actions
-  const addAccount = (accData: Omit<Account, 'id'>): Account => {
-    const newAcc: Account = {
-      ...accData,
-      id: 'acc-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-    };
-    setAccounts((prev) => [...prev, newAcc]);
-    return newAcc;
+  const addAccount = async (accData: Omit<Account, 'id'>): Promise<Account> => {
+    const tempId = 'acc-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    const optimisticAcc: Account = { ...accData, id: tempId };
+
+    setAccounts((prev) => [...prev, optimisticAcc]);
+
+    try {
+      const res = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(accData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.account) {
+          setAccounts((prev) =>
+            prev.map((a) => (a.id === tempId ? data.account : a))
+          );
+          return data.account;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao salvar conta no Neon DB:', err);
+    }
+    return optimisticAcc;
   };
 
-  const editAccount = (id: string, updatedData: Partial<Account>) => {
+  const editAccount = async (id: string, updatedData: Partial<Account>) => {
     setAccounts((prev) => prev.map((a) => (a.id === id ? { ...a, ...updatedData } : a)));
+
+    try {
+      await fetch('/api/accounts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updatedData }),
+      });
+    } catch (err) {
+      console.error('Erro ao atualizar conta no Neon DB:', err);
+    }
   };
 
-  const deleteAccount = (id: string) => {
+  const deleteAccount = async (id: string) => {
     setAccounts((prev) => prev.filter((a) => a.id !== id));
+
+    try {
+      await fetch(`/api/accounts?id=${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Erro ao deletar conta no Neon DB:', err);
+    }
   };
 
-  const transferBetweenAccounts = (
+  const transferBetweenAccounts = async (
     fromId: string,
     toId: string,
     amount: number,
     description: string = 'Transferência entre contas'
   ) => {
-    const fromAcc = accounts.find((a) => a.id === fromId);
-    const toAcc = accounts.find((a) => a.id === toId);
-    if (!fromAcc || !toAcc || amount <= 0) return;
+    try {
+      const res = await fetch('/api/accounts/transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromId, toId, amount, description }),
+      });
 
-    const today = new Date().toISOString().split('T')[0];
-
-    // Outflow transaction
-    addTransaction({
-      description: `${description} para ${toAcc.name}`,
-      amount: amount,
-      type: 'expense',
-      categoryId: 'cat-outros',
-      accountId: fromId,
-      date: today,
-      notes: `Transferência enviada para ${toAcc.name}`,
-    });
-
-    // Inflow transaction
-    addTransaction({
-      description: `${description} de ${fromAcc.name}`,
-      amount: amount,
-      type: 'income',
-      categoryId: 'cat-outros',
-      accountId: toId,
-      date: today,
-      notes: `Transferência recebida de ${fromAcc.name}`,
-    });
+      if (res.ok) {
+        await refreshData();
+      }
+    } catch (err) {
+      console.error('Erro ao transferir no Neon DB:', err);
+    }
   };
 
   // Category Actions
-  const addCategory = (catData: Omit<Category, 'id'>): Category => {
-    const newCat: Category = {
-      ...catData,
-      id: 'cat-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-    };
-    setCategories((prev) => [...prev, newCat]);
-    return newCat;
+  const addCategory = async (catData: Omit<Category, 'id'>): Promise<Category> => {
+    const tempId = 'cat-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+    const optimisticCat: Category = { ...catData, id: tempId };
+
+    setCategories((prev) => [...prev, optimisticCat]);
+
+    try {
+      const res = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(catData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.category) {
+          setCategories((prev) =>
+            prev.map((c) => (c.id === tempId ? data.category : c))
+          );
+          return data.category;
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao criar categoria no Neon DB:', err);
+    }
+    return optimisticCat;
   };
 
-  const editCategory = (id: string, updatedData: Partial<Category>) => {
+  const editCategory = async (id: string, updatedData: Partial<Category>) => {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, ...updatedData } : c)));
+
+    try {
+      await fetch('/api/categories', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...updatedData }),
+      });
+    } catch (err) {
+      console.error('Erro ao atualizar categoria no Neon DB:', err);
+    }
   };
 
-  const deleteCategory = (id: string) => {
+  const deleteCategory = async (id: string) => {
     setCategories((prev) => prev.filter((c) => c.id !== id));
+
+    try {
+      await fetch(`/api/categories?id=${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Erro ao deletar categoria no Neon DB:', err);
+    }
   };
 
   // Notification Actions
-  const markNotificationAsRead = (id: string) => {
+  const markNotificationAsRead = async (id: string) => {
     setReadNotifIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+
+    try {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+    } catch (err) {
+      console.error('Erro ao marcar notificação no Neon DB:', err);
+    }
   };
 
-  const markAllNotificationsAsRead = () => {
+  const markAllNotificationsAsRead = async () => {
     const allIds = notifications.map((n) => n.id);
     setReadNotifIds(allIds);
+
+    try {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: allIds }),
+      });
+    } catch (err) {
+      console.error('Erro ao marcar todas notificações no Neon DB:', err);
+    }
   };
 
-  const resetToDemoData = () => {
-    localStorage.clear();
-    setAccounts(initialAccounts);
-    setTransactions(initialTransactions);
-    setBills(initialBills);
-    setCategories(initialCategories);
-    setReadNotifIds([]);
+  const resetToDemoData = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset' }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setAccounts(data.accounts || []);
+        setTransactions(data.transactions || []);
+        setBills(data.bills || []);
+        setCategories(data.categories || []);
+        setReadNotifIds([]);
+      }
+    } catch (err) {
+      console.error('Erro ao restaurar dados no Neon DB:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -533,6 +665,9 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         unreadNotificationsCount,
         activeTab,
         setActiveTab,
+        isDbConnected,
+        isLoading,
+        refreshData,
         totalBalance,
         currentMonthIncome,
         currentMonthExpense,

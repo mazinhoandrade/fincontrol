@@ -13,7 +13,6 @@ import {
   Bell,
   Sparkles,
   TrendingUp,
-  RotateCcw,
   ShieldCheck,
 } from 'lucide-react';
 
@@ -28,7 +27,6 @@ export function Sidebar({ onOpenNotifications }: SidebarProps) {
     overdueBillsCount,
     unreadNotificationsCount,
     totalBalance,
-    resetToDemoData,
   } = useFinance();
 
   const navItems: { id: ActiveTab; label: string; icon: React.ReactNode; badge?: number; badgeColor?: string }[] = [
@@ -136,19 +134,6 @@ export function Sidebar({ onOpenNotifications }: SidebarProps) {
           </div>
           <p className="text-base font-black text-zinc-100 font-mono mt-1">{formatCurrency(totalBalance)}</p>
         </div>
-
-        {/* Demo reset */}
-        <button
-          onClick={() => {
-            if (confirm('Deseja restaurar todos os dados para a demonstração inicial?')) {
-              resetToDemoData();
-            }
-          }}
-          className="w-full py-2 px-3 text-[11px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 rounded-xl flex items-center justify-center gap-1.5 transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Restaurar Dados Demo
-        </button>
       </div>
     </aside>
   );

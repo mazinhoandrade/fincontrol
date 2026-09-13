@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id           String        @id @default(cuid())
+  name         String
+  type         String        // 'income' | 'expense' | 'both'
+  icon         String
+  color        String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  transactions Transaction[]
+  bills        Bill[]
+}
+
+model Account {
+  id            String        @id @default(cuid())
+  name          String
+  type          String        // 'dinheiro' | 'banco' | 'carteira' | 'investimento' | 'outros'
+  balance       Float         @default(0)
+  institution   String?
+  color         String
+  icon          String?
+  accountNumber String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  transactions  Transaction[]
+  bills         Bill[]
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  description String
+  amount      Float
+  type        String   // 'income' | 'expense'
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date        String   // YYYY-MM-DD
+  notes       String?
+  billId      String?
+  bill        Bill?    @relation(fields: [billId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Bill {
+  id               String        @id @default(cuid())
+  title            String
+  amount           Float
+  dueDate          String        // YYYY-MM-DD
+  categoryId       String
+  category         Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  status           String        // 'pending' | 'paid' | 'overdue'
+  accountId        String?
+  account          Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  recipient        String?
+  barcode          String?
+  notes            String?
+  paidAt           String?
+  isRecurring      Boolean?      @default(false)
+  recurrencePeriod String?       // 'monthly' | 'weekly' | 'yearly'
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  transactions     Transaction[]
+}
+
+model ReadNotification {
+  id        String   @id
+  readAt    DateTime @default(now())
+}

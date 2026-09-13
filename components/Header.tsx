@@ -29,6 +29,7 @@ export function Header({ onOpenNotifications }: HeaderProps) {
     setActiveTab,
     unreadNotificationsCount,
     overdueBillsCount,
+    isDbConnected,
   } = useFinance();
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -76,6 +77,21 @@ export function Header({ onOpenNotifications }: HeaderProps) {
 
         {/* Right: Actions, Notifications, Profile */}
         <div className="flex items-center gap-3">
+          {/* Neon DB Status Badge */}
+          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 bg-zinc-900 border border-zinc-800 rounded-full text-[11px] font-medium text-zinc-300">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isDbConnected
+                  ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50'
+                  : 'bg-amber-400 animate-pulse'
+              }`}
+            />
+            <span className="text-zinc-400">Neon DB:</span>
+            <span className={isDbConnected ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+              {isDbConnected ? 'Conectado' : 'Conectando...'}
+            </span>
+          </div>
+
           {/* Quick Add Buttons on Desktop */}
           <div className="hidden sm:flex items-center gap-2">
             <button

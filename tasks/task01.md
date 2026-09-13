@@ -1,0 +1,3 @@
+- quero que instaler o prisma db pra usa como neon db
+- instegra o db com o projeto 
+- link da conexão do neon "postgresql://neondb_owner:npg_aDw8Q5tglGyz@ep-steep-frog-ac5fmcxu-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
