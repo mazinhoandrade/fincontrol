@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useFinance } from '@/context/FinanceContext';
+import { useSession, signOut } from '@/lib/auth-client';
 import { ActiveTab, TransactionType } from '@/lib/types';
 import {
   Bell,
@@ -15,6 +17,8 @@ import {
   LayoutDashboard,
   ArrowLeftRight,
   Landmark,
+  LogOut,
+  Loader2,
 } from 'lucide-react';
 import { TransactionModal } from './modals/TransactionModal';
 import { BillModal } from './modals/BillModal';
@@ -32,10 +36,31 @@ export function Header({ onOpenNotifications }: HeaderProps) {
     isDbConnected,
   } = useFinance();
 
+  const router = useRouter();
+  const { data: session } = useSession();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [defaultTxType, setDefaultTxType] = useState<TransactionType>('expense');
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
+
+  const userName = session?.user?.name || (session?.user?.email ? session.user.email.split('@')[0] : 'Usuário');
+  const userEmail = session?.user?.email || '';
+  const userInitial = (userName ? userName[0] : 'U').toUpperCase();
+
+  const handleLogout = async () => {
+    try {
+      setIsLoggingOut(true);
+      await signOut();
+      router.replace('/login');
+      router.refresh();
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+      router.replace('/login');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   const getPageTitle = (tab: ActiveTab) => {
     switch (tab) {
@@ -122,15 +147,45 @@ export function Header({ onOpenNotifications }: HeaderProps) {
             )}
           </button>
 
-          {/* User Profile avatar */}
-          <div className="flex items-center gap-2.5 pl-2 border-l border-zinc-800">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
-              M
+          {/* User Profile & Logout */}
+          <div className="flex items-center gap-2 pl-2 border-l border-zinc-800">
+            <div className="flex items-center gap-2">
+              {session?.user?.image ? (
+                <img
+                  src={session.user.image}
+                  alt={userName}
+                  className="w-8 h-8 rounded-full object-cover border border-zinc-700 shadow-sm"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-sm ring-1 ring-white/10 shrink-0">
+                  {userInitial}
+                </div>
+              )}
+              <div className="hidden lg:block text-left max-w-[130px]">
+                <p className="text-xs font-semibold text-zinc-200 truncate" title={userName}>
+                  {userName}
+                </p>
+                <p className="text-[10px] text-zinc-400 truncate" title={userEmail}>
+                  {userEmail || 'Conectado'}
+                </p>
+              </div>
             </div>
-            <div className="hidden lg:block text-left">
-              <p className="text-xs font-semibold text-zinc-200">Mazinho</p>
-              <p className="text-[10px] text-zinc-400">Plano Premium</p>
-            </div>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              title="Sair da conta"
+              aria-label="Sair da conta"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-zinc-400 hover:text-rose-400 bg-zinc-900/60 hover:bg-rose-500/10 border border-zinc-800 hover:border-rose-500/30 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              {isLoggingOut ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+              ) : (
+                <LogOut className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline text-xs">Sair</span>
+            </button>
           </div>
         </div>
       </header>
@@ -228,6 +283,43 @@ export function Header({ onOpenNotifications }: HeaderProps) {
                   Contas & Carteiras
                 </button>
               </nav>
+            </div>
+
+            {/* Mobile Drawer Bottom: User Profile & Logout */}
+            <div className="pt-4 border-t border-zinc-800 space-y-3">
+              <div className="flex items-center gap-3 px-1">
+                {session?.user?.image ? (
+                  <img
+                    src={session.user.image}
+                    alt={userName}
+                    className="w-9 h-9 rounded-full object-cover border border-zinc-700 shadow-sm"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-sm ring-1 ring-white/10 shrink-0">
+                    {userInitial}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-zinc-100 truncate">{userName}</p>
+                  <p className="text-[11px] text-zinc-400 truncate">{userEmail || 'Conectado'}</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                disabled={isLoggingOut}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {isLoggingOut ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-rose-400" />
+                ) : (
+                  <LogOut className="w-4 h-4" />
+                )}
+                <span>Sair da conta</span>
+              </button>
             </div>
           </div>
         </div>
