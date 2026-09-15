@@ -122,7 +122,7 @@ export default function LoginPage() {
             >
               Entrar
             </button>
-            <button
+            {/* <button
               type="button"
               onClick={() => {
                 setMode('register');
@@ -135,7 +135,7 @@ export default function LoginPage() {
               }`}
             >
               Criar Conta
-            </button>
+            </button> */}
           </div>
 
           {/* Error notification banner */}
