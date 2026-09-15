@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth-server';
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const {
       id,
@@ -20,6 +26,24 @@ export async function POST(request: Request) {
       recurrencePeriod,
     } = body;
 
+    // Verify category belongs to user
+    const category = await prisma.category.findFirst({
+      where: { id: categoryId, userId: user.id },
+    });
+    if (!category) {
+      return NextResponse.json({ error: 'Categoria inválida ou não encontrada' }, { status: 400 });
+    }
+
+    // Verify account belongs to user if provided
+    if (accountId) {
+      const account = await prisma.account.findFirst({
+        where: { id: accountId, userId: user.id },
+      });
+      if (!account) {
+        return NextResponse.json({ error: 'Conta bancária inválida ou não encontrada' }, { status: 400 });
+      }
+    }
+
     const bill = await prisma.bill.create({
       data: {
         id: id || undefined,
@@ -35,6 +59,7 @@ export async function POST(request: Request) {
         paidAt: paidAt || null,
         isRecurring: Boolean(isRecurring),
         recurrencePeriod: recurrencePeriod || null,
+        userId: user.id,
       },
     });
 
@@ -50,6 +75,11 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, action, accountId, paidDate, ...data } = body;
 
@@ -57,24 +87,31 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: 'Bill ID is required' }, { status: 400 });
     }
 
+    const existingBill = await prisma.bill.findFirst({
+      where: { id, userId: user.id },
+    });
+
+    if (!existingBill) {
+      return NextResponse.json({ error: 'Conta não encontrada ou acesso não permitido' }, { status: 404 });
+    }
+
     if (action === 'pay') {
       const result = await prisma.$transaction(async (tx: any) => {
-        const bill = await tx.bill.findUnique({ where: { id } });
-        if (!bill) throw new Error('Bill not found');
+        const bill = await tx.bill.findFirst({ where: { id, userId: user.id } });
+        if (!bill) throw new Error('Conta a pagar não encontrada');
 
         const actualPaidDate = paidDate || new Date().toISOString().split('T')[0];
-        const updatedBill = await tx.bill.update({
-          where: { id },
-          data: {
-            status: 'paid',
-            paidAt: actualPaidDate,
-            accountId: accountId || bill.accountId,
-          },
-        });
-
-        // Create linked expense transaction
         const targetAccountId = accountId || bill.accountId;
+
         if (targetAccountId) {
+          const account = await tx.account.findFirst({
+            where: { id: targetAccountId, userId: user.id },
+          });
+          if (!account) {
+            throw new Error('Conta bancária selecionada não pertence ao usuário');
+          }
+
+          // Create linked expense transaction
           await tx.transaction.create({
             data: {
               description: `Pagamento: ${bill.title}`,
@@ -85,6 +122,7 @@ export async function PUT(request: Request) {
               date: actualPaidDate,
               billId: bill.id,
               notes: bill.recipient ? `Favorecido: ${bill.recipient}` : undefined,
+              userId: user.id,
             },
           });
 
@@ -96,6 +134,15 @@ export async function PUT(request: Request) {
           });
         }
 
+        const updatedBill = await tx.bill.update({
+          where: { id },
+          data: {
+            status: 'paid',
+            paidAt: actualPaidDate,
+            accountId: targetAccountId || bill.accountId,
+          },
+        });
+
         return updatedBill;
       });
 
@@ -104,12 +151,12 @@ export async function PUT(request: Request) {
 
     if (action === 'unpay') {
       const result = await prisma.$transaction(async (tx: any) => {
-        const bill = await tx.bill.findUnique({ where: { id } });
-        if (!bill) throw new Error('Bill not found');
+        const bill = await tx.bill.findFirst({ where: { id, userId: user.id } });
+        if (!bill) throw new Error('Conta a pagar não encontrada');
 
-        // Find linked transactions
+        // Find linked transactions belonging to this user
         const linkedTransactions = await tx.transaction.findMany({
-          where: { billId: id },
+          where: { billId: id, userId: user.id },
         });
 
         for (const linkedTx of linkedTransactions) {
@@ -137,6 +184,26 @@ export async function PUT(request: Request) {
       });
 
       return NextResponse.json({ success: true, bill: result });
+    }
+
+    // Verify new category if provided
+    if (data.categoryId) {
+      const cat = await prisma.category.findFirst({
+        where: { id: data.categoryId, userId: user.id },
+      });
+      if (!cat) {
+        return NextResponse.json({ error: 'Categoria inválida' }, { status: 400 });
+      }
+    }
+
+    // Verify new account if provided
+    if (data.accountId) {
+      const acc = await prisma.account.findFirst({
+        where: { id: data.accountId, userId: user.id },
+      });
+      if (!acc) {
+        return NextResponse.json({ error: 'Conta inválida' }, { status: 400 });
+      }
     }
 
     // Regular update
@@ -170,11 +237,24 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
       return NextResponse.json({ error: 'Bill ID is required' }, { status: 400 });
+    }
+
+    const existingBill = await prisma.bill.findFirst({
+      where: { id, userId: user.id },
+    });
+
+    if (!existingBill) {
+      return NextResponse.json({ error: 'Conta não encontrada ou acesso não permitido' }, { status: 404 });
     }
 
     await prisma.bill.delete({ where: { id } });

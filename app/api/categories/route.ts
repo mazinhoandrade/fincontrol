@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth-server';
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, name, type, icon, color } = body;
 
@@ -13,6 +19,7 @@ export async function POST(request: Request) {
         type,
         icon: icon || 'Tag',
         color: color || '#64748b',
+        userId: user.id,
       },
     });
 
@@ -28,11 +35,24 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, name, type, icon, color } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'Category ID is required' }, { status: 400 });
+    }
+
+    const existingCategory = await prisma.category.findFirst({
+      where: { id, userId: user.id },
+    });
+
+    if (!existingCategory) {
+      return NextResponse.json({ error: 'Categoria não encontrada ou acesso não permitido' }, { status: 404 });
     }
 
     const updatedCategory = await prisma.category.update({
@@ -57,11 +77,24 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
       return NextResponse.json({ error: 'Category ID is required' }, { status: 400 });
+    }
+
+    const existingCategory = await prisma.category.findFirst({
+      where: { id, userId: user.id },
+    });
+
+    if (!existingCategory) {
+      return NextResponse.json({ error: 'Categoria não encontrada ou acesso não permitido' }, { status: 404 });
     }
 
     await prisma.category.delete({ where: { id } });

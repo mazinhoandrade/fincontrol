@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth-server';
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { fromId, toId, amount, description } = body;
 
@@ -14,11 +20,41 @@ export async function POST(request: Request) {
     const today = new Date().toISOString().split('T')[0];
 
     const result = await prisma.$transaction(async (tx: any) => {
-      const fromAcc = await tx.account.findUnique({ where: { id: fromId } });
-      const toAcc = await tx.account.findUnique({ where: { id: toId } });
+      const fromAcc = await tx.account.findFirst({
+        where: { id: fromId, userId: user.id },
+      });
+      const toAcc = await tx.account.findFirst({
+        where: { id: toId, userId: user.id },
+      });
 
       if (!fromAcc || !toAcc) {
-        throw new Error('Uma ou ambas as contas não foram encontradas');
+        throw new Error('Uma ou ambas as contas não foram encontradas ou não pertencem ao usuário');
+      }
+
+      // Find an appropriate category for this user
+      let category = await tx.category.findFirst({
+        where: {
+          userId: user.id,
+          OR: [{ name: { contains: 'Outros', mode: 'insensitive' } }, { type: 'both' }],
+        },
+      });
+
+      if (!category) {
+        category = await tx.category.findFirst({
+          where: { userId: user.id },
+        });
+      }
+
+      if (!category) {
+        category = await tx.category.create({
+          data: {
+            name: 'Outros',
+            type: 'both',
+            icon: 'Tag',
+            color: '#64748b',
+            userId: user.id,
+          },
+        });
       }
 
       // Decrement from sender
@@ -39,10 +75,11 @@ export async function POST(request: Request) {
           description: `${description || 'Transferência entre contas'} para ${toAcc.name}`,
           amount: numAmount,
           type: 'expense',
-          categoryId: 'cat-outros',
+          categoryId: category.id,
           accountId: fromId,
           date: today,
           notes: `Transferência enviada para ${toAcc.name}`,
+          userId: user.id,
         },
       });
 
@@ -52,10 +89,11 @@ export async function POST(request: Request) {
           description: `${description || 'Transferência entre contas'} de ${fromAcc.name}`,
           amount: numAmount,
           type: 'income',
-          categoryId: 'cat-outros',
+          categoryId: category.id,
           accountId: toId,
           date: today,
           notes: `Transferência recebida de ${fromAcc.name}`,
+          userId: user.id,
         },
       });
 

@@ -22,6 +22,11 @@ model User {
   updatedAt     DateTime      @updatedAt
   sessions      Session[]
   accounts      AuthAccount[]
+  categories    Category[]
+  finAccounts   Account[]
+  transactions  Transaction[]
+  bills         Bill[]
+  readNotifs    ReadNotification[]
 
   @@map("user")
 }
@@ -80,10 +85,14 @@ model Category {
   type         String        // 'income' | 'expense' | 'both'
   icon         String
   color        String
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   transactions Transaction[]
   bills        Bill[]
+
+  @@index([userId])
 }
 
 model Account {
@@ -95,10 +104,14 @@ model Account {
   color         String
   icon          String?
   accountNumber String?
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   transactions  Transaction[]
   bills         Bill[]
+
+  @@index([userId])
 }
 
 model Transaction {
@@ -114,8 +127,12 @@ model Transaction {
   notes       String?
   billId      String?
   bill        Bill?    @relation(fields: [billId], references: [id], onDelete: SetNull)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Bill {
@@ -134,12 +151,22 @@ model Bill {
   paidAt           String?
   isRecurring      Boolean?      @default(false)
   recurrencePeriod String?       // 'monthly' | 'weekly' | 'yearly'
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   transactions     Transaction[]
+
+  @@index([userId])
 }
 
 model ReadNotification {
-  id        String   @id
-  readAt    DateTime @default(now())
+  id             String   @id @default(cuid())
+  notificationId String
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime @default(now())
+
+  @@unique([userId, notificationId])
+  @@index([userId])
 }

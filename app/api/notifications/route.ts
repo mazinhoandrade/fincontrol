@@ -1,17 +1,31 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth-server';
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, ids } = body;
 
     if (ids && Array.isArray(ids)) {
       for (const notifId of ids) {
         await prisma.readNotification.upsert({
-          where: { id: notifId },
+          where: {
+            userId_notificationId: {
+              userId: user.id,
+              notificationId: notifId,
+            },
+          },
           update: {},
-          create: { id: notifId },
+          create: {
+            userId: user.id,
+            notificationId: notifId,
+          },
         });
       }
       return NextResponse.json({ success: true, marked: ids.length });
@@ -19,9 +33,17 @@ export async function POST(request: Request) {
 
     if (id) {
       await prisma.readNotification.upsert({
-        where: { id },
+        where: {
+          userId_notificationId: {
+            userId: user.id,
+            notificationId: id,
+          },
+        },
         update: {},
-        create: { id },
+        create: {
+          userId: user.id,
+          notificationId: id,
+        },
       });
       return NextResponse.json({ success: true, marked: 1 });
     }

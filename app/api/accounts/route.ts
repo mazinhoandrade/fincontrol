@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth-server';
 
 export async function POST(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, name, type, balance, institution, color, icon, accountNumber } = body;
 
@@ -16,6 +22,7 @@ export async function POST(request: Request) {
         color: color || '#10b981',
         icon: icon || null,
         accountNumber: accountNumber || null,
+        userId: user.id,
       },
     });
 
@@ -31,11 +38,24 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { id, name, type, balance, institution, color, icon, accountNumber } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
+    }
+
+    const existingAccount = await prisma.account.findFirst({
+      where: { id, userId: user.id },
+    });
+
+    if (!existingAccount) {
+      return NextResponse.json({ error: 'Conta não encontrada ou acesso não permitido' }, { status: 404 });
     }
 
     const updatedAccount = await prisma.account.update({
@@ -63,11 +83,24 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
 
     if (!id) {
       return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
+    }
+
+    const existingAccount = await prisma.account.findFirst({
+      where: { id, userId: user.id },
+    });
+
+    if (!existingAccount) {
+      return NextResponse.json({ error: 'Conta não encontrada ou acesso não permitido' }, { status: 404 });
     }
 
     await prisma.account.delete({ where: { id } });

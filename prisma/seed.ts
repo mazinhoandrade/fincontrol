@@ -11,6 +11,18 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding database with initial data...');
 
+  // Find or create default user for seed
+  let user = await prisma.user.findFirst();
+  if (!user) {
+    user = await prisma.user.create({
+      data: {
+        name: 'Usuário Padrão',
+        email: 'usuario@fincontrol.com',
+      },
+    });
+    console.log('✓ Created default seed user');
+  }
+
   // Seed Categories
   for (const cat of initialCategories) {
     await prisma.category.upsert({
@@ -20,6 +32,7 @@ async function main() {
         type: cat.type,
         icon: cat.icon,
         color: cat.color,
+        userId: user.id,
       },
       create: {
         id: cat.id,
@@ -27,6 +40,7 @@ async function main() {
         type: cat.type,
         icon: cat.icon,
         color: cat.color,
+        userId: user.id,
       },
     });
   }
@@ -44,6 +58,7 @@ async function main() {
         color: acc.color,
         icon: acc.icon,
         accountNumber: acc.accountNumber,
+        userId: user.id,
       },
       create: {
         id: acc.id,
@@ -54,6 +69,7 @@ async function main() {
         color: acc.color,
         icon: acc.icon,
         accountNumber: acc.accountNumber,
+        userId: user.id,
       },
     });
   }
@@ -76,6 +92,7 @@ async function main() {
         paidAt: bill.paidAt,
         isRecurring: bill.isRecurring,
         recurrencePeriod: bill.recurrencePeriod,
+        userId: user.id,
       },
       create: {
         id: bill.id,
@@ -91,6 +108,7 @@ async function main() {
         paidAt: bill.paidAt,
         isRecurring: bill.isRecurring,
         recurrencePeriod: bill.recurrencePeriod,
+        userId: user.id,
       },
     });
   }
@@ -109,6 +127,7 @@ async function main() {
         date: tx.date,
         notes: tx.notes,
         billId: tx.billId,
+        userId: user.id,
       },
       create: {
         id: tx.id,
@@ -120,6 +139,7 @@ async function main() {
         date: tx.date,
         notes: tx.notes,
         billId: tx.billId,
+        userId: user.id,
       },
     });
   }
