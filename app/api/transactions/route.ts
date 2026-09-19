@@ -25,12 +25,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const numAmount = Math.round(Number(amount));
+
     const result = await prisma.$transaction(async (tx: any) => {
       const transaction = await tx.transaction.create({
         data: {
           id: id || undefined,
           description,
-          amount: Number(amount),
+          amount: numAmount,
           type,
           categoryId,
           accountId,
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
         },
       });
 
-      const delta = type === 'income' ? Number(amount) : -Number(amount);
+      const delta = type === 'income' ? numAmount : -numAmount;
       await tx.account.update({
         where: { id: accountId },
         data: {
@@ -109,7 +111,7 @@ export async function PUT(request: Request) {
       });
 
       // Update the transaction
-      const newAmount = amount !== undefined ? Number(amount) : oldTx.amount;
+      const newAmount = amount !== undefined ? Math.round(Number(amount)) : oldTx.amount;
       const newType = type || oldTx.type;
 
       const updated = await tx.transaction.update({

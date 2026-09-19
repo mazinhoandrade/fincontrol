@@ -99,7 +99,7 @@ model Account {
   id            String        @id @default(cuid())
   name          String
   type          String        // 'dinheiro' | 'banco' | 'carteira' | 'investimento' | 'outros'
-  balance       Float         @default(0)
+  balance       Int           @default(0)
   institution   String?
   color         String
   icon          String?
@@ -117,7 +117,7 @@ model Account {
 model Transaction {
   id          String   @id @default(cuid())
   description String
-  amount      Float
+  amount      Int
   type        String   // 'income' | 'expense'
   categoryId  String
   category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -138,7 +138,7 @@ model Transaction {
 model Bill {
   id               String        @id @default(cuid())
   title            String
-  amount           Float
+  amount           Int
   dueDate          String        // YYYY-MM-DD
   categoryId       String
   category         Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)

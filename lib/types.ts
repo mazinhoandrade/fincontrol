@@ -14,7 +14,7 @@ export interface Account {
   id: string;
   name: string;
   type: AccountType;
-  balance: number;
+  balance: number; // In integer cents (e.g. 10000 = R$ 100,00)
   institution?: string;
   color: string;
   icon?: string;
@@ -24,7 +24,7 @@ export interface Account {
 export interface Transaction {
   id: string;
   description: string;
-  amount: number;
+  amount: number; // In integer cents (e.g. 1050 = R$ 10,50)
   type: TransactionType;
   categoryId: string;
   accountId: string;
@@ -38,7 +38,7 @@ export type BillStatus = 'pending' | 'paid' | 'overdue';
 export interface Bill {
   id: string;
   title: string;
-  amount: number;
+  amount: number; // In integer cents (e.g. 1050 = R$ 10,50)
   dueDate: string; // YYYY-MM-DD
   categoryId: string;
   status: BillStatus;

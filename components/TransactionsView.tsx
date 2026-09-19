@@ -104,7 +104,7 @@ export function TransactionsView() {
         tx.type === 'income' ? 'Receita' : 'Despesa',
         `"${cat}"`,
         `"${acc}"`,
-        tx.amount.toFixed(2),
+        (tx.amount / 100).toFixed(2),
         `"${(tx.notes || '').replace(/"/g, '""')}"`,
       ].join(',');
     });

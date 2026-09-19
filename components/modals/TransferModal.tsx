@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { Modal } from './Modal';
 import { useFinance } from '@/context/FinanceContext';
 import { formatCurrency } from '@/lib/utils';
-import { ArrowRightLeft, DollarSign, FileText, AlertCircle } from 'lucide-react';
+import { MoneyInput } from '@/components/MoneyInput';
+import { ArrowRightLeft, FileText, AlertCircle } from 'lucide-react';
 
 interface TransferModalProps {
   isOpen: boolean;
@@ -16,7 +17,7 @@ export function TransferModal({ isOpen, onClose }: TransferModalProps) {
 
   const [fromId, setFromId] = useState(accounts[0]?.id || '');
   const [toId, setToId] = useState(accounts[1]?.id || accounts[0]?.id || '');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(0);
   const [notes, setNotes] = useState('Transferência entre contas');
 
   const fromAccount = accounts.find((a) => a.id === fromId);
@@ -24,18 +25,16 @@ export function TransferModal({ isOpen, onClose }: TransferModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numAmount = parseFloat(amount.replace(',', '.'));
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (!amount || amount <= 0) return;
     if (fromId === toId) return;
 
-    transferBetweenAccounts(fromId, toId, numAmount, notes.trim());
-    setAmount('');
+    transferBetweenAccounts(fromId, toId, amount, notes.trim());
+    setAmount(0);
     onClose();
   };
 
   const isSameAccount = fromId === toId;
-  const numAmount = parseFloat(amount.replace(',', '.')) || 0;
-  const hasInsufficientFunds = fromAccount && numAmount > fromAccount.balance;
+  const hasInsufficientFunds = fromAccount && amount > fromAccount.balance;
 
   return (
     <Modal
@@ -97,20 +96,13 @@ export function TransferModal({ isOpen, onClose }: TransferModalProps) {
         {/* Amount */}
         <div>
           <label className="block text-xs font-medium text-zinc-300 mb-1.5">Valor da Transferência (R$)</label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
-              <DollarSign className="w-4 h-4" />
-            </div>
-            <input
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 text-sm font-semibold"
-            />
-          </div>
+          <MoneyInput
+            value={amount}
+            onChange={setAmount}
+            className="focus:border-cyan-500"
+            required
+            autoFocus
+          />
           {hasInsufficientFunds && (
             <p className="text-[11px] text-amber-400 mt-1 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" /> O valor é maior que o saldo disponível na conta de origem.

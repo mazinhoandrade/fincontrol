@@ -17,7 +17,7 @@ export async function POST(request: Request) {
         id: id || undefined,
         name,
         type,
-        balance: Number(balance) || 0,
+        balance: Math.round(Number(balance)) || 0,
         institution: institution || null,
         color: color || '#10b981',
         icon: icon || null,
@@ -63,7 +63,7 @@ export async function PUT(request: Request) {
       data: {
         ...(name !== undefined && { name }),
         ...(type !== undefined && { type }),
-        ...(balance !== undefined && { balance: Number(balance) }),
+        ...(balance !== undefined && { balance: Math.round(Number(balance)) }),
         ...(institution !== undefined && { institution }),
         ...(color !== undefined && { color }),
         ...(icon !== undefined && { icon }),

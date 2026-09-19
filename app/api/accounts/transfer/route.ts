@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { fromId, toId, amount, description } = body;
 
-    const numAmount = Number(amount);
+    const numAmount = Math.round(Number(amount));
     if (!fromId || !toId || numAmount <= 0) {
       return NextResponse.json({ error: 'Parâmetros de transferência inválidos' }, { status: 400 });
     }

@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { useFinance } from '@/context/FinanceContext';
 import { Transaction, TransactionType } from '@/lib/types';
-import { ArrowDownLeft, ArrowUpRight, Calendar, DollarSign, Tag, Landmark, FileText } from 'lucide-react';
+import { MoneyInput } from '@/components/MoneyInput';
+import { ArrowDownLeft, ArrowUpRight, Calendar, Tag, Landmark, FileText } from 'lucide-react';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -23,7 +24,7 @@ export function TransactionModal({
 
   const [type, setType] = useState<TransactionType>(defaultType);
   const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(0);
   const [categoryId, setCategoryId] = useState('');
   const [accountId, setAccountId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -33,7 +34,7 @@ export function TransactionModal({
     if (transactionToEdit) {
       setType(transactionToEdit.type);
       setDescription(transactionToEdit.description);
-      setAmount(transactionToEdit.amount.toString());
+      setAmount(transactionToEdit.amount);
       setCategoryId(transactionToEdit.categoryId);
       setAccountId(transactionToEdit.accountId);
       setDate(transactionToEdit.date);
@@ -41,7 +42,7 @@ export function TransactionModal({
     } else {
       setType(defaultType);
       setDescription('');
-      setAmount('');
+      setAmount(0);
       setDate(new Date().toISOString().split('T')[0]);
       setNotes('');
       // Set defaults for categories and accounts
@@ -58,14 +59,13 @@ export function TransactionModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numAmount = parseFloat(amount.replace(',', '.'));
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (!amount || amount <= 0) return;
     if (!description.trim() || !categoryId || !accountId) return;
 
     if (transactionToEdit) {
       editTransaction(transactionToEdit.id, {
         description,
-        amount: numAmount,
+        amount,
         type,
         categoryId,
         accountId,
@@ -75,7 +75,7 @@ export function TransactionModal({
     } else {
       addTransaction({
         description,
-        amount: numAmount,
+        amount,
         type,
         categoryId,
         accountId,
@@ -134,20 +134,13 @@ export function TransactionModal({
         {/* Amount Input */}
         <div>
           <label className="block text-xs font-medium text-zinc-300 mb-1.5">Valor (R$)</label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
-              <DollarSign className="w-4 h-4" />
-            </div>
-            <input
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 text-sm font-semibold"
-            />
-          </div>
+          <MoneyInput
+            value={amount}
+            onChange={setAmount}
+            className={type === 'income' ? 'focus:border-emerald-500' : 'focus:border-rose-500'}
+            required
+            autoFocus={!transactionToEdit}
+          />
         </div>
 
         {/* Description */}

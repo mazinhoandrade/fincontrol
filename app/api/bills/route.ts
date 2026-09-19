@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       data: {
         id: id || undefined,
         title,
-        amount: Number(amount),
+        amount: Math.round(Number(amount)),
         dueDate,
         categoryId,
         status: status || 'pending',
@@ -211,7 +211,7 @@ export async function PUT(request: Request) {
       where: { id },
       data: {
         ...(data.title !== undefined && { title: data.title }),
-        ...(data.amount !== undefined && { amount: Number(data.amount) }),
+        ...(data.amount !== undefined && { amount: Math.round(Number(data.amount)) }),
         ...(data.dueDate !== undefined && { dueDate: data.dueDate }),
         ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
         ...(data.status !== undefined && { status: data.status }),

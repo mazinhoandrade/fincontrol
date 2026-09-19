@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { useFinance } from '@/context/FinanceContext';
 import { Bill } from '@/lib/types';
+import { MoneyInput } from '@/components/MoneyInput';
 import { Calendar, DollarSign, Tag, User, Barcode, FileText, Repeat } from 'lucide-react';
 
 interface BillModalProps {
@@ -16,7 +17,7 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
   const { addBill, editBill, categories } = useFinance();
 
   const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(0);
   const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
   const [categoryId, setCategoryId] = useState('');
   const [recipient, setRecipient] = useState('');
@@ -28,7 +29,7 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
   useEffect(() => {
     if (billToEdit) {
       setTitle(billToEdit.title);
-      setAmount(billToEdit.amount.toString());
+      setAmount(billToEdit.amount);
       setDueDate(billToEdit.dueDate);
       setCategoryId(billToEdit.categoryId);
       setRecipient(billToEdit.recipient || '');
@@ -38,7 +39,7 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
       setRecurrencePeriod(billToEdit.recurrencePeriod || 'monthly');
     } else {
       setTitle('');
-      setAmount('');
+      setAmount(0);
       setDueDate(new Date().toISOString().split('T')[0]);
       setRecipient('');
       setBarcode('');
@@ -54,14 +55,13 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numAmount = parseFloat(amount.replace(',', '.'));
-    if (isNaN(numAmount) || numAmount <= 0) return;
+    if (!amount || amount <= 0) return;
     if (!title.trim() || !categoryId || !dueDate) return;
 
     if (billToEdit) {
       editBill(billToEdit.id, {
         title,
-        amount: numAmount,
+        amount,
         dueDate,
         categoryId,
         recipient: recipient.trim() || undefined,
@@ -73,7 +73,7 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
     } else {
       addBill({
         title,
-        amount: numAmount,
+        amount,
         dueDate,
         categoryId,
         recipient: recipient.trim() || undefined,
@@ -115,14 +115,12 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
             <label className="block text-xs font-medium text-zinc-300 mb-1.5 flex items-center gap-1">
               <DollarSign className="w-3.5 h-3.5 text-zinc-400" /> Valor (R$)
             </label>
-            <input
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              required
+            <MoneyInput
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-500 text-sm font-semibold"
+              onChange={setAmount}
+              className="focus:border-amber-500"
+              required
+              autoFocus={!billToEdit}
             />
           </div>
 

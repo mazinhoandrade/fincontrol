@@ -5,11 +5,34 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number): string {
+export function formatCurrency(valueInCents: number): string {
+  const safeVal = Number.isFinite(valueInCents) ? valueInCents : 0;
+  const value = safeVal / 100;
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   }).format(value);
+}
+
+export function formatCentsToInput(cents: number): string {
+  if (cents === 0) return '0,00';
+  const isNeg = cents < 0;
+  const abs = Math.abs(cents);
+  const val = abs / 100;
+  const formatted = val.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return isNeg ? `-${formatted}` : formatted;
+}
+
+export function parseInputToCents(value: string, allowNegative: boolean = false): number {
+  if (!value) return 0;
+  const isNeg = allowNegative && value.includes('-');
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return 0;
+  const cents = parseInt(digits, 10);
+  return isNeg ? -cents : cents;
 }
 
 export function formatDate(dateString: string): string {

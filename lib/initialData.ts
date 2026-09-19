@@ -31,7 +31,7 @@ export const initialAccounts: Account[] = [
     id: 'acc-dinheiro',
     name: 'Dinheiro Físico',
     type: 'dinheiro',
-    balance: 380.00,
+    balance: 38000,
     institution: 'Espécie',
     color: '#10b981',
     icon: 'Coins',
@@ -40,7 +40,7 @@ export const initialAccounts: Account[] = [
     id: 'acc-nubank',
     name: 'Nubank Principal',
     type: 'banco',
-    balance: 4250.75,
+    balance: 425075,
     institution: 'Nubank',
     color: '#8b5cf6',
     icon: 'Landmark',
@@ -50,7 +50,7 @@ export const initialAccounts: Account[] = [
     id: 'acc-itau',
     name: 'Itaú Corrente',
     type: 'banco',
-    balance: 1820.30,
+    balance: 182030,
     institution: 'Itaú Unibanco',
     color: '#f97316',
     icon: 'Building2',
@@ -60,7 +60,7 @@ export const initialAccounts: Account[] = [
     id: 'acc-carteira',
     name: 'Carteira de Investimentos',
     type: 'carteira',
-    balance: 9500.00,
+    balance: 950000,
     institution: 'XP Investimentos',
     color: '#06b6d4',
     icon: 'Wallet',
@@ -71,7 +71,7 @@ export const initialBills: Bill[] = [
   {
     id: 'bill-1',
     title: 'Aluguel do Apartamento',
-    amount: 1450.00,
+    amount: 145000,
     dueDate: getISODate(year, now.getMonth() + 1, Math.min(28, now.getDate() + 5)),
     categoryId: 'cat-moradia',
     status: 'pending',
@@ -84,7 +84,7 @@ export const initialBills: Bill[] = [
   {
     id: 'bill-2',
     title: 'Energia Elétrica (Enel)',
-    amount: 195.40,
+    amount: 19540,
     dueDate: getISODate(year, now.getMonth() + 1, Math.max(1, now.getDate() - 2)), // Overdue example
     categoryId: 'cat-servicos',
     status: 'overdue',
@@ -96,7 +96,7 @@ export const initialBills: Bill[] = [
   {
     id: 'bill-3',
     title: 'Internet Fibra 500MB',
-    amount: 119.90,
+    amount: 11990,
     dueDate: getISODate(year, now.getMonth() + 1, Math.min(28, now.getDate() + 2)), // Due soon
     categoryId: 'cat-servicos',
     status: 'pending',
@@ -107,7 +107,7 @@ export const initialBills: Bill[] = [
   {
     id: 'bill-4',
     title: 'Cartão de Crédito Nubank',
-    amount: 840.50,
+    amount: 84050,
     dueDate: getISODate(year, now.getMonth() + 1, Math.min(28, now.getDate() + 10)),
     categoryId: 'cat-outros',
     status: 'pending',
@@ -117,7 +117,7 @@ export const initialBills: Bill[] = [
   {
     id: 'bill-5',
     title: 'Plano de Saúde',
-    amount: 320.00,
+    amount: 32000,
     dueDate: getISODate(year, now.getMonth() + 1, Math.max(1, now.getDate() - 6)),
     categoryId: 'cat-saude',
     status: 'paid',
@@ -128,7 +128,7 @@ export const initialBills: Bill[] = [
   {
     id: 'bill-6',
     title: 'Academia SmartFit',
-    amount: 119.90,
+    amount: 11990,
     dueDate: getISODate(year, now.getMonth() + 1, Math.min(28, now.getDate() + 15)),
     categoryId: 'cat-saude',
     status: 'pending',
@@ -141,7 +141,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-1',
     description: 'Salário Mensal',
-    amount: 5800.00,
+    amount: 580000,
     type: 'income',
     categoryId: 'cat-salario',
     accountId: 'acc-nubank',
@@ -151,7 +151,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-2',
     description: 'Projeto UI/UX Freelance',
-    amount: 1200.00,
+    amount: 120000,
     type: 'income',
     categoryId: 'cat-freelance',
     accountId: 'acc-itau',
@@ -161,7 +161,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-3',
     description: 'Supermercado Mensal',
-    amount: 680.45,
+    amount: 68045,
     type: 'expense',
     categoryId: 'cat-alimentacao',
     accountId: 'acc-nubank',
@@ -171,7 +171,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-4',
     description: 'Abastecimento Carro',
-    amount: 180.00,
+    amount: 18000,
     type: 'expense',
     categoryId: 'cat-transporte',
     accountId: 'acc-itau',
@@ -181,7 +181,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-5',
     description: 'Pagamento Plano de Saúde',
-    amount: 320.00,
+    amount: 32000,
     type: 'expense',
     categoryId: 'cat-saude',
     accountId: 'acc-nubank',
@@ -192,7 +192,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-6',
     description: 'Jantar Restaurante',
-    amount: 145.80,
+    amount: 14580,
     type: 'expense',
     categoryId: 'cat-alimentacao',
     accountId: 'acc-dinheiro',
@@ -201,7 +201,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-7',
     description: 'Rendimento CDB 100% CDI',
-    amount: 85.30,
+    amount: 8530,
     type: 'income',
     categoryId: 'cat-rendimentos',
     accountId: 'acc-carteira',
@@ -210,7 +210,7 @@ export const initialTransactions: Transaction[] = [
   {
     id: 'tx-8',
     description: 'Cinema e Lazer',
-    amount: 72.00,
+    amount: 7200,
     type: 'expense',
     categoryId: 'cat-lazer',
     accountId: 'acc-dinheiro',

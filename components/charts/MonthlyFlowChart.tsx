@@ -52,7 +52,7 @@ export function MonthlyFlowChart() {
 
   // Find max value to normalize bar heights
   const maxVal = useMemo(() => {
-    let max = 1000;
+    let max = 100000; // Baseline of R$ 1.000,00 in cents
     monthlyData.forEach((d) => {
       if (d.income > max) max = d.income;
       if (d.expense > max) max = d.expense;

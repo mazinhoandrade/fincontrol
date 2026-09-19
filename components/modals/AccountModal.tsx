@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { useFinance } from '@/context/FinanceContext';
 import { Account, AccountType } from '@/lib/types';
+import { MoneyInput } from '@/components/MoneyInput';
 import { Landmark, Coins, Wallet, DollarSign, Palette, Building2 } from 'lucide-react';
 
 interface AccountModalProps {
@@ -28,7 +29,7 @@ export function AccountModal({ isOpen, onClose, accountToEdit }: AccountModalPro
 
   const [name, setName] = useState('');
   const [type, setType] = useState<AccountType>('banco');
-  const [balance, setBalance] = useState('');
+  const [balance, setBalance] = useState(0);
   const [institution, setInstitution] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [color, setColor] = useState('#8b5cf6');
@@ -37,14 +38,14 @@ export function AccountModal({ isOpen, onClose, accountToEdit }: AccountModalPro
     if (accountToEdit) {
       setName(accountToEdit.name);
       setType(accountToEdit.type);
-      setBalance(accountToEdit.balance.toString());
+      setBalance(accountToEdit.balance);
       setInstitution(accountToEdit.institution || '');
       setAccountNumber(accountToEdit.accountNumber || '');
       setColor(accountToEdit.color || '#8b5cf6');
     } else {
       setName('');
       setType('banco');
-      setBalance('0');
+      setBalance(0);
       setInstitution('');
       setAccountNumber('');
       setColor('#8b5cf6');
@@ -53,8 +54,7 @@ export function AccountModal({ isOpen, onClose, accountToEdit }: AccountModalPro
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const numBalance = parseFloat(balance.replace(',', '.'));
-    if (isNaN(numBalance)) return;
+    if (isNaN(balance)) return;
     if (!name.trim()) return;
 
     const icon = type === 'dinheiro' ? 'Coins' : type === 'carteira' ? 'Wallet' : 'Landmark';
@@ -63,7 +63,7 @@ export function AccountModal({ isOpen, onClose, accountToEdit }: AccountModalPro
       editAccount(accountToEdit.id, {
         name,
         type,
-        balance: numBalance,
+        balance,
         institution: institution.trim() || undefined,
         accountNumber: accountNumber.trim() || undefined,
         color,
@@ -73,7 +73,7 @@ export function AccountModal({ isOpen, onClose, accountToEdit }: AccountModalPro
       addAccount({
         name,
         type,
-        balance: numBalance,
+        balance,
         institution: institution.trim() || undefined,
         accountNumber: accountNumber.trim() || undefined,
         color,
@@ -154,14 +154,12 @@ export function AccountModal({ isOpen, onClose, accountToEdit }: AccountModalPro
             <label className="block text-xs font-medium text-zinc-300 mb-1.5 flex items-center gap-1">
               <DollarSign className="w-3.5 h-3.5 text-zinc-400" /> Saldo Atual (R$)
             </label>
-            <input
-              type="number"
-              step="0.01"
-              placeholder="0,00"
-              required
+            <MoneyInput
               value={balance}
-              onChange={(e) => setBalance(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500 text-sm font-semibold"
+              onChange={setBalance}
+              allowNegative={true}
+              className="focus:border-indigo-500"
+              required
             />
           </div>
 
