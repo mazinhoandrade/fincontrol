@@ -5,7 +5,9 @@ import { Modal } from './Modal';
 import { useFinance } from '@/context/FinanceContext';
 import { Bill } from '@/lib/types';
 import { MoneyInput } from '@/components/MoneyInput';
-import { Calendar, DollarSign, Tag, User, Barcode, FileText, Repeat } from 'lucide-react';
+import { Calendar, DollarSign, Tag, User, Barcode, FileText, Repeat, Camera, Sparkles, CheckCircle2 } from 'lucide-react';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
+import { parseBarcodeData, ParsedBarcodeResult } from '@/lib/barcodeUtils';
 
 interface BillModalProps {
   isOpen: boolean;
@@ -25,6 +27,76 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
   const [notes, setNotes] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrencePeriod, setRecurrencePeriod] = useState<'monthly' | 'weekly' | 'yearly'>('monthly');
+
+  // Scanner de código de barras pela câmera
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [autoFillNotice, setAutoFillNotice] = useState<string | null>(null);
+
+  const applyParsedBarcode = (result: ParsedBarcodeResult) => {
+    if (result.barcode) {
+      setBarcode(result.barcode);
+    }
+    if (result.amount && result.amount > 0) {
+      setAmount(result.amount);
+    }
+    if (result.dueDate) {
+      setDueDate(result.dueDate);
+    }
+    if (result.recipient) {
+      setRecipient(result.recipient);
+    }
+    if (result.titleSuggestion && !title.trim()) {
+      setTitle(result.titleSuggestion);
+    }
+    if (result.categoryKeyword) {
+      const match = expenseCategories.find(
+        (c) =>
+          c.name.toLowerCase().includes(result.categoryKeyword!.toLowerCase()) ||
+          c.id.toLowerCase().includes(result.categoryKeyword!.toLowerCase())
+      );
+      if (match) {
+        setCategoryId(match.id);
+      }
+    }
+
+    const filled: string[] = [];
+    if (result.amount && result.amount > 0) filled.push('Valor');
+    if (result.dueDate) filled.push('Vencimento');
+    if (result.recipient) filled.push('Favorecido');
+    if (result.titleSuggestion && !title.trim()) filled.push('Título');
+
+    if (filled.length > 0) {
+      setAutoFillNotice(`Preenchido: ${filled.join(', ')}`);
+    } else {
+      setAutoFillNotice('Código lido com sucesso!');
+    }
+
+    setTimeout(() => {
+      setAutoFillNotice(null);
+    }, 4500);
+  };
+
+  const handleBarcodeChange = (val: string) => {
+    setBarcode(val);
+    const digits = val.replace(/\D/g, '');
+    if (digits.length === 44 || digits.length === 47 || digits.length === 48 || val.startsWith('000201')) {
+      const parsed = parseBarcodeData(val);
+      if (parsed.amount || parsed.dueDate || parsed.recipient) {
+        if (parsed.amount && !amount) setAmount(parsed.amount);
+        if (parsed.dueDate) setDueDate(parsed.dueDate);
+        if (parsed.recipient && !recipient) setRecipient(parsed.recipient);
+        if (parsed.titleSuggestion && !title.trim()) setTitle(parsed.titleSuggestion);
+        if (parsed.categoryKeyword) {
+          const match = expenseCategories.find(
+            (c) =>
+              c.name.toLowerCase().includes(parsed.categoryKeyword!.toLowerCase()) ||
+              c.id.toLowerCase().includes(parsed.categoryKeyword!.toLowerCase())
+          );
+          if (match && !categoryId) setCategoryId(match.id);
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     if (billToEdit) {
@@ -88,7 +160,8 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
   };
 
   return (
-    <Modal
+    <>
+      <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={billToEdit ? 'Editar Conta a Pagar' : 'Nova Conta a Pagar'}
@@ -174,16 +247,34 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
 
         {/* Barcode */}
         <div>
-          <label className="block text-xs font-medium text-zinc-300 mb-1.5 flex items-center gap-1.5">
-            <Barcode className="w-3.5 h-3.5 text-zinc-400" /> Código de Barras / Linha Digitável (Opcional)
-          </label>
-          <input
-            type="text"
-            placeholder="Cole o código do boleto ou chave PIX aqui..."
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-500 text-xs font-mono"
-          />
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+              <Barcode className="w-3.5 h-3.5 text-zinc-400" /> Código de Barras / Linha Digitável (Opcional)
+            </label>
+            {autoFillNotice && (
+              <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1 animate-in fade-in">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> {autoFillNotice}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Cole o código do boleto ou chave PIX aqui..."
+              value={barcode}
+              onChange={(e) => handleBarcodeChange(e.target.value)}
+              className="flex-1 min-w-0 px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-500 text-xs font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setIsScannerOpen(true)}
+              className="px-3.5 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:border-amber-500/50 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer shadow-sm active:scale-95"
+              title="Abrir câmera para escanear código de barras"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Escanear</span>
+            </button>
+          </div>
         </div>
 
         {/* Recurrence Toggle */}
@@ -235,5 +326,12 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
         </div>
       </form>
     </Modal>
+
+    <BarcodeScannerModal
+      isOpen={isScannerOpen}
+      onClose={() => setIsScannerOpen(false)}
+      onScan={applyParsedBarcode}
+    />
+    </>
   );
 }
