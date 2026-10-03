@@ -1,8 +1,27 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats, Html5QrcodeScannerState } from 'html5-qrcode';
-import { Camera, X, RefreshCw, Zap, ZapOff, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  Camera,
+  X,
+  RefreshCw,
+  Zap,
+  ZapOff,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  ZoomIn,
+  Keyboard,
+  Info,
+} from 'lucide-react';
+import {
+  MultiFormatReader,
+  BarcodeFormat,
+  DecodeHintType,
+  RGBLuminanceSource,
+  BinaryBitmap,
+  HybridBinarizer,
+} from '@zxing/library';
 import { parseBarcodeData, playScanSuccessSound, ParsedBarcodeResult } from '@/lib/barcodeUtils';
 
 interface BarcodeScannerModalProps {
@@ -11,234 +30,445 @@ interface BarcodeScannerModalProps {
   onScan: (result: ParsedBarcodeResult) => void;
 }
 
+// Configuração otimizada do leitor ZXing com Try Harder para boletos (ITF)
+function createZxingReader(): MultiFormatReader {
+  const hints = new Map<DecodeHintType, unknown>();
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+    BarcodeFormat.ITF, // Boletos bancários e concessionárias (Interleaved 2 of 5)
+    BarcodeFormat.CODE_128,
+    BarcodeFormat.CODE_39,
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.QR_CODE, // Boletos com PIX
+  ]);
+  hints.set(DecodeHintType.TRY_HARDER, true);
+
+  const reader = new MultiFormatReader();
+  reader.setHints(hints);
+  return reader;
+}
+
 export function BarcodeScannerModal({ isOpen, onClose, onScan }: BarcodeScannerModalProps) {
-  const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([]);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const zxingReaderRef = useRef<MultiFormatReader | null>(null);
+  const animationFrameIdRef = useRef<number | null>(null);
+  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nativeDetectorRef = useRef<any>(null);
+
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
-  const [torchOn, setTorchOn] = useState(false);
-  const [hasTorch, setHasTorch] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [detectedSuccess, setDetectedSuccess] = useState<string | null>(null);
 
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const isStoppingRef = useRef<boolean>(false);
-  const elementId = 'barcode-scanner-viewport';
+  // Controles de hardware da câmera
+  const [hasTorch, setHasTorch] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [hasZoom, setHasZoom] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState<number>(1);
+  const [maxZoom, setMaxZoom] = useState<number>(1);
+  const [minZoom, setMinZoom] = useState<number>(1);
 
-  // Stop camera scanner safely
-  const stopScanner = useCallback(async () => {
-    if (isStoppingRef.current) return;
-    isStoppingRef.current = true;
-    try {
-      const scanner = scannerRef.current;
-      if (scanner) {
-        if (scanner.getState() === Html5QrcodeScannerState.SCANNING || scanner.getState() === Html5QrcodeScannerState.PAUSED) {
-          await scanner.stop();
+  // Entrada manual de Linha Digitável
+  const [showManualInput, setShowManualInput] = useState(false);
+  const [manualCode, setManualCode] = useState('');
+
+  // Notificação de processamento
+  const [isProcessingStill, setIsProcessingStill] = useState(false);
+
+  // Inicializa o leitor ZXing uma única vez
+  if (!zxingReaderRef.current) {
+    zxingReaderRef.current = createZxingReader();
+  }
+
+  // Desativa e libera câmera e loops de animação
+  const stopCamera = useCallback(() => {
+    if (animationFrameIdRef.current) {
+      cancelAnimationFrame(animationFrameIdRef.current);
+      animationFrameIdRef.current = null;
+    }
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // ignore
         }
-        scanner.clear();
-      }
-    } catch (err) {
-      console.warn('Erro ao finalizar scanner:', err);
-    } finally {
-      scannerRef.current = null;
-      isStoppingRef.current = false;
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
   }, []);
 
-  // Handle successful detection
-  const handleSuccess = useCallback(
-    async (decodedText: string) => {
-      // Avoid multiple detections in a row
-      if (detectedSuccess) return;
+  // Processamento quando um código válido é detectado
+  const handleDetectedCode = useCallback(
+    (codeText: string) => {
+      const clean = codeText.trim();
+      if (!clean) return;
 
       playScanSuccessSound();
-      const parsed = parseBarcodeData(decodedText);
-      setDetectedSuccess(parsed.barcode || decodedText);
+      const parsed = parseBarcodeData(clean);
+      setDetectedSuccess(parsed.barcode || clean);
 
-      await stopScanner();
+      stopCamera();
 
-      // Short delay for visual feedback to user
       setTimeout(() => {
         onScan(parsed);
         onClose();
-      }, 550);
+      }, 500);
     },
-    [detectedSuccess, onScan, onClose, stopScanner]
+    [onScan, onClose, stopCamera]
   );
 
-  // Start scanning with selected or default camera
-  const startScanner = useCallback(
-    async (cameraId?: string) => {
+  // Decodifica um frame com múltiplos passes (Native MLKit -> ZXing Padrão -> ZXing Alto Contraste)
+  const decodeFrame = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (source: CanvasImageSource, width: number, height: number): Promise<string | null> => {
+      if (!width || !height) return null;
+
+      // 1. Tenta BarcodeDetector nativo com aceleração por hardware (Google MLKit no Chrome/Android)
+      if (nativeDetectorRef.current) {
+        try {
+          const barcodes = await nativeDetectorRef.current.detect(source);
+          if (barcodes && barcodes.length > 0) {
+            for (const b of barcodes) {
+              if (b.rawValue && b.rawValue.trim()) {
+                return b.rawValue.trim();
+              }
+            }
+          }
+        } catch {
+          // Fallback para ZXing
+        }
+      }
+
+      // 2. Prepara canvas para análise pelo ZXing
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement('canvas');
+      }
+      const canvas = canvasRef.current;
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return null;
+
+      ctx.drawImage(source, 0, 0, width, height);
+      const imgData = ctx.getImageData(0, 0, width, height);
+
+      const reader = zxingReaderRef.current;
+      if (!reader) return null;
+
+      // Passo 2.1: Leitura padrão ZXing
+      try {
+        const lum = new RGBLuminanceSource(imgData.data, width, height);
+        const bitmap = new BinaryBitmap(new HybridBinarizer(lum));
+        const result = reader.decode(bitmap);
+        if (result && result.getText()) {
+          return result.getText();
+        }
+      } catch {
+        // Continua para o passo de alto contraste
+      }
+
+      // Passo 2.2: Binarização e estiramento de contraste para boletos com sombra ou baixa nitidez
+      const d = imgData.data;
+      let min = 255;
+      let max = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+        if (gray < min) min = gray;
+        if (gray > max) max = gray;
+      }
+
+      const range = max - min || 1;
+      const threshold = min + range * 0.46;
+
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+        const val = gray > threshold ? 255 : 0;
+        d[i] = val;
+        d[i + 1] = val;
+        d[i + 2] = val;
+      }
+
+      try {
+        const lumContrast = new RGBLuminanceSource(d, width, height);
+        const bitmapContrast = new BinaryBitmap(new HybridBinarizer(lumContrast));
+        const resultContrast = reader.decode(bitmapContrast);
+        if (resultContrast && resultContrast.getText()) {
+          return resultContrast.getText();
+        }
+      } catch {
+        // Código não encontrado neste frame
+      }
+
+      return null;
+    },
+    []
+  );
+
+  // Inicializa o Native BarcodeDetector se disponível no navegador
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any;
+    if (typeof win !== 'undefined' && 'BarcodeDetector' in win) {
+      try {
+        win.BarcodeDetector.getSupportedFormats().then((formats: string[]) => {
+          const supported = ['itf', 'code_128', 'code_39', 'ean_13', 'qr_code'].filter((f) =>
+            formats.includes(f)
+          );
+          if (supported.length > 0) {
+            nativeDetectorRef.current = new win.BarcodeDetector({ formats: supported });
+          }
+        });
+      } catch (err) {
+        console.warn('BarcodeDetector nativo não pôde ser instanciado:', err);
+      }
+    }
+  }, []);
+
+  // Inicia a câmera com alta resolução e foco contínuo
+  const startCamera = useCallback(
+    async (deviceId?: string) => {
       setIsInitializing(true);
       setErrorMsg(null);
       setDetectedSuccess(null);
-      setTorchOn(false);
+      stopCamera();
 
       try {
-        await stopScanner();
-
-        // Check if DOM element exists
-        const el = document.getElementById(elementId);
-        if (!el) {
-          setIsInitializing(false);
-          return;
-        }
-
-        const scanner = new Html5Qrcode(elementId, {
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.ITF,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.CODE_93,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.DATA_MATRIX,
+        // Solicita resolução Full HD (1080p) ou pelo menos 720p para nitidez máxima nas barras do boleto
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const videoConstraints: any = {
+          deviceId: deviceId ? { exact: deviceId } : undefined,
+          facingMode: deviceId ? undefined : { ideal: 'environment' },
+          width: { ideal: 1920, min: 1280 },
+          height: { ideal: 1080, min: 720 },
+          advanced: [
+            { focusMode: 'continuous' },
+            { exposureMode: 'continuous' },
           ],
-          verbose: false,
-        });
+        };
 
-        scannerRef.current = scanner;
+        const constraints: MediaStreamConstraints = {
+          audio: false,
+          video: videoConstraints,
+        };
 
-        // Discover cameras if not yet loaded
-        const availableCameras = await Html5Qrcode.getCameras();
-        if (availableCameras && availableCameras.length > 0) {
-          setCameras(availableCameras);
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
         }
 
-        // Camera config: Prefer rear/environment camera
-        const cameraConfig = cameraId
-          ? { deviceId: { exact: cameraId } }
-          : { facingMode: 'environment' };
+        // Detecta capacidades da câmera (Lanterna e Zoom)
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const caps = (videoTrack.getCapabilities ? videoTrack.getCapabilities() : {}) as any;
 
-        await scanner.start(
-          cameraConfig,
-          {
-            fps: 15,
-            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-              // Wide aspect ratio optimal for Brazilian boleto barcodes
-              const width = Math.min(Math.round(viewfinderWidth * 0.92), 420);
-              const height = Math.min(Math.round(viewfinderHeight * 0.55), 180);
-              return { width, height };
-            },
-            aspectRatio: 1.333333,
-          },
-          (decodedText) => {
-            handleSuccess(decodedText);
-          },
-          () => {
-            // Frame scan without match - ignore
-          }
-        );
+          // Suporte à Lanterna (Torch)
+          setHasTorch(!!caps.torch);
+          setTorchOn(false);
 
-        // Check if torch/flashlight is supported
-        try {
-          const trackCaps = scanner.getRunningTrackCapabilities() as MediaTrackCapabilities & { torch?: boolean };
-          if (trackCaps && 'torch' in trackCaps) {
-            setHasTorch(true);
+          // Suporte a Zoom por hardware
+          if (caps.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > 1) {
+            setHasZoom(true);
+            setMinZoom(caps.zoom.min || 1);
+            setMaxZoom(caps.zoom.max || 3);
+            const initialZoom = Math.min(1.5, caps.zoom.max || 1.5);
+            setZoomLevel(initialZoom);
+            try {
+              // Aplica leve zoom inicial (1.5x) para afastar a câmera do papel e garantir foco perfeito
+              // @ts-expect-error zoom is supported in ImageCapture spec
+              await videoTrack.applyConstraints({ advanced: [{ zoom: initialZoom }] });
+            } catch {
+              // Ignore se não suportar aplicar zoom de início
+            }
           } else {
-            setHasTorch(false);
+            setHasZoom(false);
           }
+        }
+
+        // Enumera dispositivos de câmera
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevs = devices.filter((d) => d.kind === 'videoinput');
+          setCameras(videoDevs);
         } catch {
-          setHasTorch(false);
+          // Ignore
         }
 
         setIsInitializing(false);
+
+        // Loop contínuo de escaneamento a cada 100ms
+        let isDecodingBusy = false;
+        scanIntervalRef.current = setInterval(async () => {
+          if (isDecodingBusy || !videoRef.current) return;
+          const video = videoRef.current;
+          if (video.readyState < 2) return;
+
+          isDecodingBusy = true;
+          try {
+            const detected = await decodeFrame(video, video.videoWidth, video.videoHeight);
+            if (detected) {
+              handleDetectedCode(detected);
+            }
+          } catch {
+            // Continua tentando
+          } finally {
+            isDecodingBusy = false;
+          }
+        }, 110);
       } catch (err: unknown) {
-        console.error('Falha ao iniciar câmera:', err);
+        console.error('Erro ao acessar a câmera:', err);
         setIsInitializing(false);
 
         const errorStr = String(err).toLowerCase();
         if (errorStr.includes('notallowed') || errorStr.includes('permission')) {
-          setErrorMsg('Permissão de acesso à câmera negada. Habilite a câmera nas configurações do navegador ou envie uma foto.');
+          setErrorMsg('Acesso à câmera negado. Permita a câmera no navegador ou envie uma foto do boleto.');
         } else if (errorStr.includes('notfound') || errorStr.includes('device')) {
-          setErrorMsg('Nenhuma câmera encontrada no dispositivo. Você pode carregar uma foto do boleto.');
+          setErrorMsg('Nenhuma câmera encontrada. Use a opção de enviar foto ou digite a linha digitável.');
         } else {
-          setErrorMsg('Não foi possível iniciar a câmera. Tente recarregar ou selecione uma imagem.');
+          setErrorMsg('Não foi possível iniciar a câmera com alta resolução. Tente enviar uma foto ou digitar o código.');
         }
       }
     },
-    [handleSuccess, stopScanner]
+    [decodeFrame, handleDetectedCode, stopCamera]
   );
 
-  // Toggle torch / lanterna
-  const toggleTorch = async () => {
-    if (!scannerRef.current || !hasTorch) return;
+  // Alterna lanterna
+  const handleToggleTorch = async () => {
+    if (!streamRef.current || !hasTorch) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    if (!track) return;
     try {
-      const nextState = !torchOn;
-      await scannerRef.current.applyVideoConstraints({
-        // @ts-expect-error torch is valid in modern browser video constraints
-        advanced: [{ torch: nextState }],
-      });
-      setTorchOn(nextState);
+      const next = !torchOn;
+      // @ts-expect-error torch is valid
+      await track.applyConstraints({ advanced: [{ torch: next }] });
+      setTorchOn(next);
     } catch (e) {
       console.warn('Erro ao alternar lanterna:', e);
     }
   };
 
-  // Switch between available cameras
-  const handleSwitchCamera = () => {
-    if (cameras.length <= 1) return;
-    const currentIndex = cameras.findIndex((c) => c.id === selectedCameraId);
-    const nextIndex = (currentIndex + 1) % cameras.length;
-    const nextCamera = cameras[nextIndex];
-    setSelectedCameraId(nextCamera.id);
-    startScanner(nextCamera.id);
+  // Ajusta zoom
+  const handleSetZoom = async (level: number) => {
+    if (!streamRef.current || !hasZoom) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      const clamped = Math.max(minZoom, Math.min(level, maxZoom));
+      // @ts-expect-error zoom is valid
+      await track.applyConstraints({ advanced: [{ zoom: clamped }] });
+      setZoomLevel(clamped);
+    } catch (e) {
+      console.warn('Erro ao aplicar zoom:', e);
+    }
   };
 
-  // Scan from uploaded file / image
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Alterna entre câmeras disponíveis
+  const handleSwitchCamera = () => {
+    if (cameras.length <= 1) return;
+    const currentIndex = cameras.findIndex((c) => c.deviceId === selectedCameraId);
+    const nextIndex = (currentIndex + 1) % cameras.length;
+    const nextDev = cameras[nextIndex];
+    setSelectedCameraId(nextDev.deviceId);
+    startCamera(nextDev.deviceId);
+  };
+
+  // Botão de Snapshot / Focar: captura quadro estático de alta resolução e decodifica
+  const handleSnapAndDecode = async () => {
+    if (!videoRef.current || isProcessingStill) return;
+    const video = videoRef.current;
+    if (video.readyState < 2) return;
+
+    setIsProcessingStill(true);
+    try {
+      const detected = await decodeFrame(video, video.videoWidth, video.videoHeight);
+      if (detected) {
+        handleDetectedCode(detected);
+      } else {
+        // Alerta suave se não encontrou no quadro
+        alert('Código não identificado neste ângulo. Mantenha o boleto reto e tente usar o zoom ou lanterna.');
+      }
+    } finally {
+      setIsProcessingStill(false);
+    }
+  };
+
+  // Leitura a partir de imagem/foto enviada (ou tirada com app nativo da câmera)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsInitializing(true);
-    setErrorMsg(null);
-
+    setIsProcessingStill(true);
     try {
-      // Need a scanner instance to scan file
-      let scanner = scannerRef.current;
-      if (!scanner) {
-        scanner = new Html5Qrcode(elementId, { verbose: false });
-        scannerRef.current = scanner;
-      }
-
-      // If active video is scanning, stop it before scanning file
-      if (scanner.getState() === Html5QrcodeScannerState.SCANNING) {
-        await scanner.stop();
-      }
-
-      const decodedText = await scanner.scanFile(file, true);
-      if (decodedText) {
-        handleSuccess(decodedText);
-      } else {
-        setErrorMsg('Nenhum código de barras ou QR Code foi detectado na imagem.');
-        setIsInitializing(false);
-      }
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          const detected = await decodeFrame(img, img.naturalWidth, img.naturalHeight);
+          if (detected) {
+            handleDetectedCode(detected);
+          } else {
+            alert('Não foi possível ler o código nesta imagem. Tente uma foto mais nítida ou digite a linha digitável.');
+          }
+        } finally {
+          setIsProcessingStill(false);
+          URL.revokeObjectURL(img.src);
+        }
+      };
+      img.src = URL.createObjectURL(file);
     } catch {
-      setErrorMsg('Não foi possível ler código nesta imagem. Tente uma foto mais nítida.');
-      setIsInitializing(false);
+      alert('Erro ao carregar imagem.');
+      setIsProcessingStill(false);
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // Initialize on open and clean up on close
+  // Aplica código digitado manualmente
+  const handleManualSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = manualCode.trim();
+    if (!clean) return;
+
+    const parsed = parseBarcodeData(clean);
+    if (parsed.amount || parsed.dueDate || parsed.recipient || parsed.barcode) {
+      playScanSuccessSound();
+      stopCamera();
+      onScan(parsed);
+      onClose();
+    } else {
+      alert('Código digitado inválido. Verifique os números digitados.');
+    }
+  };
+
+  // Inicializa a câmera ao abrir o modal
   useEffect(() => {
     if (isOpen) {
-      // Wait for modal DOM element to mount
       const timer = setTimeout(() => {
-        startScanner();
+        startCamera();
       }, 150);
       return () => {
         clearTimeout(timer);
-        stopScanner();
+        stopCamera();
       };
     } else {
-      stopScanner();
+      stopCamera();
     }
-  }, [isOpen, startScanner, stopScanner]);
+  }, [isOpen, startCamera, stopCamera]);
 
   if (!isOpen) return null;
 
@@ -247,105 +477,116 @@ export function BarcodeScannerModal({ isOpen, onClose, onScan }: BarcodeScannerM
       {/* Backdrop */}
       <div
         onClick={() => {
-          stopScanner();
+          stopCamera();
           onClose();
         }}
-        className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity animate-in fade-in"
+        className="fixed inset-0 bg-black/85 backdrop-blur-md transition-opacity animate-in fade-in"
       />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-10 animate-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden z-10 animate-in zoom-in-95 duration-200 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900/80">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800 bg-zinc-900/90">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
               <Camera className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-zinc-100">Escanear Código de Barras</h3>
-              <p className="text-[11px] text-zinc-400">Aponte para o boleto ou envie uma foto</p>
+              <h3 className="text-sm font-semibold text-zinc-100">Leitor de Boleto & Código de Barras</h3>
+              <p className="text-[11px] text-zinc-400">Enquadre as barras do boleto na horizontal</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => {
-              stopScanner();
+              stopCamera();
               onClose();
             }}
-            className="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+            className="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Viewport / Camera Body */}
-        <div className="relative bg-black flex flex-col items-center justify-center min-h-[300px] overflow-hidden">
-          {/* HTML5 QR Code Mount Target */}
-          <div
-            id={elementId}
-            className="w-full max-h-[360px] overflow-hidden flex items-center justify-center [&_video]:w-full [&_video]:object-cover"
+        {/* Viewport / Video Area */}
+        <div className="relative bg-black flex items-center justify-center min-h-[320px] max-h-[420px] overflow-hidden">
+          {/* Elemento de vídeo conectado ao stream da câmera */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover"
           />
 
-          {/* Scanner Viewfinder Overlay */}
+          {/* Mira retangular com formato ideal para boletos horizontais (ITF) */}
           {!errorMsg && !detectedSuccess && (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center p-4">
-              {/* Target Bounding Frame */}
-              <div className="relative w-[88%] max-w-[380px] h-[130px] border-2 border-dashed border-amber-400/40 rounded-xl flex items-center justify-center bg-black/20 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
-                {/* 4 Corner Markers */}
-                <span className="absolute -top-1 -left-1 w-5 h-5 border-t-3 border-l-3 border-amber-400 rounded-tl-sm" />
-                <span className="absolute -top-1 -right-1 w-5 h-5 border-t-3 border-r-3 border-amber-400 rounded-tr-sm" />
-                <span className="absolute -bottom-1 -left-1 w-5 h-5 border-b-3 border-l-3 border-amber-400 rounded-bl-sm" />
-                <span className="absolute -bottom-1 -right-1 w-5 h-5 border-b-3 border-r-3 border-amber-400 rounded-br-sm" />
+              <div className="relative w-[92%] max-w-[420px] h-[120px] border-2 border-dashed border-amber-400/50 rounded-xl flex items-center justify-center bg-black/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.50)]">
+                {/* 4 cantoneiras de mira */}
+                <span className="absolute -top-1 -left-1 w-6 h-6 border-t-3 border-l-3 border-amber-400 rounded-tl" />
+                <span className="absolute -top-1 -right-1 w-6 h-6 border-t-3 border-r-3 border-amber-400 rounded-tr" />
+                <span className="absolute -bottom-1 -left-1 w-6 h-6 border-b-3 border-l-3 border-amber-400 rounded-bl" />
+                <span className="absolute -bottom-1 -right-1 w-6 h-6 border-b-3 border-r-3 border-amber-400 rounded-br" />
 
-                {/* Laser Scanning Animation Bar */}
-                <div className="absolute inset-x-2 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent animate-bounce opacity-85 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
+                {/* Linha vermelha/âmbar de laser */}
+                <div className="absolute inset-x-2 h-0.5 bg-gradient-to-r from-transparent via-amber-400 to-transparent animate-pulse shadow-[0_0_10px_rgba(251,191,36,0.9)]" />
               </div>
 
-              <p className="mt-4 text-[11px] font-medium text-zinc-300 bg-zinc-950/70 px-3 py-1 rounded-full border border-zinc-700/50 backdrop-blur-sm">
-                Enquadre o código de barras ou QR Code do boleto
-              </p>
+              <div className="mt-3 flex items-center gap-1.5 px-3 py-1 bg-zinc-950/80 backdrop-blur-md rounded-full border border-zinc-700/60 text-zinc-300 text-[11px]">
+                <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Mantenha o boleto reto a cerca de 20cm ou use o zoom</span>
+              </div>
             </div>
           )}
 
-          {/* Loading Indicator */}
+          {/* Indicador de carregamento */}
           {isInitializing && !errorMsg && !detectedSuccess && (
             <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-xs flex flex-col items-center justify-center gap-2.5">
-              <RefreshCw className="w-7 h-7 text-amber-400 animate-spin" />
-              <p className="text-xs text-zinc-300 font-medium">Iniciando câmera...</p>
+              <RefreshCw className="w-8 h-8 text-amber-400 animate-spin" />
+              <p className="text-xs text-zinc-200 font-medium">Iniciando câmera em alta resolução...</p>
             </div>
           )}
 
-          {/* Success Overlay */}
+          {/* Feedback de processamento de foto estática */}
+          {isProcessingStill && (
+            <div className="absolute inset-0 bg-zinc-950/80 backdrop-blur-xs flex flex-col items-center justify-center gap-2">
+              <RefreshCw className="w-8 h-8 text-amber-400 animate-spin" />
+              <p className="text-xs text-amber-300 font-semibold">Analisando imagem em alta resolução...</p>
+            </div>
+          )}
+
+          {/* Feedback de sucesso */}
           {detectedSuccess && (
-            <div className="absolute inset-0 bg-emerald-950/90 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center animate-in zoom-in-95">
-              <CheckCircle2 className="w-12 h-12 text-emerald-400 mb-2 animate-bounce" />
-              <h4 className="text-sm font-semibold text-emerald-100">Código Lido com Sucesso!</h4>
-              <p className="text-[11px] text-emerald-300/90 mt-1 font-mono break-all max-w-xs">
+            <div className="absolute inset-0 bg-emerald-950/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in zoom-in-95">
+              <CheckCircle2 className="w-14 h-14 text-emerald-400 mb-2 animate-bounce" />
+              <h4 className="text-sm font-bold text-emerald-100">Boleto Identificado com Sucesso!</h4>
+              <p className="text-xs text-emerald-300/90 mt-1 font-mono break-all max-w-sm px-3 py-1.5 bg-emerald-900/40 rounded-lg border border-emerald-700/50">
                 {detectedSuccess}
               </p>
-              <p className="text-[11px] text-emerald-400 mt-2 font-medium">Preenchendo campos da conta...</p>
+              <p className="text-[11px] text-emerald-400 mt-2 font-medium">Preenchendo valor, vencimento e favorecido...</p>
             </div>
           )}
 
-          {/* Error View */}
+          {/* Visão de erro de câmera */}
           {errorMsg && (
-            <div className="p-6 text-center max-w-xs flex flex-col items-center">
+            <div className="p-6 text-center max-w-sm flex flex-col items-center">
               <div className="p-3 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full mb-3">
-                <AlertCircle className="w-7 h-7" />
+                <AlertCircle className="w-8 h-8" />
               </div>
               <p className="text-xs text-zinc-200 mb-4">{errorMsg}</p>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => startScanner(selectedCameraId)}
-                  className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5"
+                  onClick={() => startCamera(selectedCameraId)}
+                  className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" /> Tentar Câmera
+                  <RefreshCw className="w-3.5 h-3.5" /> Tentar Novamente
                 </button>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Upload className="w-3.5 h-3.5" /> Enviar Foto
                 </button>
@@ -354,68 +595,140 @@ export function BarcodeScannerModal({ isOpen, onClose, onScan }: BarcodeScannerM
           )}
         </div>
 
-        {/* Footer Controls */}
-        <div className="flex items-center justify-between p-4 bg-zinc-950 border-t border-zinc-800">
-          <div className="flex items-center gap-2">
-            {/* Switch Camera */}
-            {cameras.length > 1 && (
-              <button
-                type="button"
-                onClick={handleSwitchCamera}
-                className="p-2 text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs transition-colors flex items-center gap-1.5"
-                title="Alternar Câmera"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span className="hidden sm:inline text-[11px]">Trocar Câmera</span>
-              </button>
+        {/* Barra de Controles Rápidos da Câmera (Zoom, Lanterna, Troca de Câmera, Captura) */}
+        <div className="px-4 py-2.5 bg-zinc-950 border-t border-zinc-800/80 flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-1.5">
+            {/* Controles de Zoom se suportado pelo hardware */}
+            {hasZoom && (
+              <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800">
+                <ZoomIn className="w-3.5 h-3.5 text-zinc-400 ml-1" />
+                <button
+                  type="button"
+                  onClick={() => handleSetZoom(1)}
+                  className={`px-2 py-0.5 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer ${
+                    zoomLevel <= 1.1 ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  1x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetZoom(1.5)}
+                  className={`px-2 py-0.5 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer ${
+                    zoomLevel > 1.1 && zoomLevel < 1.9 ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  1.5x
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetZoom(2)}
+                  className={`px-2 py-0.5 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer ${
+                    zoomLevel >= 1.9 ? 'bg-amber-500 text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  2x
+                </button>
+              </div>
             )}
 
-            {/* Flashlight / Torch */}
+            {/* Lanterna / Torch */}
             {hasTorch && (
               <button
                 type="button"
-                onClick={toggleTorch}
-                className={`p-2 rounded-xl text-xs border transition-colors flex items-center gap-1.5 ${
+                onClick={handleToggleTorch}
+                className={`p-2 rounded-xl text-xs border transition-colors flex items-center gap-1.5 cursor-pointer ${
                   torchOn
-                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
                     : 'text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800 border-zinc-800'
                 }`}
                 title={torchOn ? 'Desligar Lanterna' : 'Ligar Lanterna'}
               >
                 {torchOn ? <Zap className="w-4 h-4 text-amber-400" /> : <ZapOff className="w-4 h-4" />}
-                <span className="hidden sm:inline text-[11px]">{torchOn ? 'Lanterna Ligada' : 'Lanterna'}</span>
+                <span className="hidden sm:inline text-[11px]">{torchOn ? 'Lanterna On' : 'Lanterna'}</span>
               </button>
             )}
 
-            {/* Upload File */}
+            {/* Alternar Câmera */}
+            {cameras.length > 1 && (
+              <button
+                type="button"
+                onClick={handleSwitchCamera}
+                className="p-2 text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Alternar Câmera"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[11px]">Câmera</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Botão de Focar / Capturar Quadro */}
+            <button
+              type="button"
+              onClick={handleSnapAndDecode}
+              disabled={isInitializing || !!errorMsg || isProcessingStill}
+              className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              title="Focar e capturar quadro de alta resolução"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Focar / Capturar</span>
+            </button>
+
+            {/* Upload / Tirar Foto Nativa com a Câmera */}
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              capture="environment"
               className="hidden"
-              onChange={handleFileChange}
+              onChange={handleFileUpload}
             />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs transition-colors flex items-center gap-1.5"
-              title="Carregar imagem do código de barras"
+              className="px-3 py-1.5 text-zinc-300 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Tirar foto com câmera nativa ou carregar foto do boleto"
             >
-              <Upload className="w-4 h-4" />
-              <span className="text-[11px]">Enviar Foto</span>
+              <Upload className="w-3.5 h-3.5" />
+              <span>Foto / Galeria</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Opção para digitar ou colar linha digitável caso o papel esteja rasgado ou manchado */}
+        <div className="p-3.5 bg-zinc-950 border-t border-zinc-800/80">
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setShowManualInput(!showManualInput)}
+              className="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 font-medium transition-colors cursor-pointer"
+            >
+              <Keyboard className="w-3.5 h-3.5" />
+              <span>{showManualInput ? 'Ocultar digitação manual' : 'Código ilegível? Digite a Linha Digitável'}</span>
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              stopScanner();
-              onClose();
-            }}
-            className="px-3.5 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            Fechar
-          </button>
+          {showManualInput && (
+            <form onSubmit={handleManualSubmit} className="mt-2.5 flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Cole ou digite os números do boleto (47 ou 48 dígitos)..."
+                value={manualCode}
+                onChange={(e) => setManualCode(e.target.value)}
+                className="flex-1 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-amber-500 text-xs font-mono"
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={!manualCode.trim()}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold rounded-xl text-xs transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Aplicar
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
