@@ -22,6 +22,7 @@ import {
   Repeat,
   Search,
   Filter,
+  X,
 } from 'lucide-react';
 
 export function BillsView() {
@@ -41,11 +42,17 @@ export function BillsView() {
   const [activeTab, setActiveTab] = useState<'all' | 'overdue' | 'upcoming' | 'paid'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [dateField, setDateField] = useState<'dueDate' | 'paidAt'>('dueDate');
 
   // Modals state
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [billToEdit, setBillToEdit] = useState<Bill | null>(null);
   const [billToPay, setBillToPay] = useState<Bill | null>(null);
+
+  const effectiveStart = startDate && endDate && startDate > endDate ? endDate : startDate;
+  const effectiveEnd = startDate && endDate && startDate > endDate ? startDate : endDate;
 
   // Filter bills
   const filteredBills = useMemo(() => {
@@ -77,6 +84,15 @@ export function BillsView() {
           return false;
         }
 
+        // Date Range Filter
+        if (startDate || endDate) {
+          const targetDate = dateField === 'dueDate' ? bill.dueDate : bill.paidAt;
+          if (!targetDate) return false;
+          const targetDay = targetDate.slice(0, 10);
+          if (effectiveStart && targetDay < effectiveStart) return false;
+          if (effectiveEnd && targetDay > effectiveEnd) return false;
+        }
+
         return true;
       })
       .sort((a, b) => {
@@ -84,7 +100,7 @@ export function BillsView() {
         if (a.status !== 'paid' && b.status === 'paid') return -1;
         return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
       });
-  }, [bills, activeTab, selectedCategory, searchQuery]);
+  }, [bills, activeTab, selectedCategory, searchQuery, startDate, endDate, dateField, effectiveStart, effectiveEnd]);
 
   // Total paid
   const paidTotal = useMemo(() => {
@@ -92,6 +108,42 @@ export function BillsView() {
       .filter((b) => b.status === 'paid')
       .reduce((acc, b) => acc + b.amount, 0);
   }, [bills]);
+
+  // Total of filtered bills
+  const filteredTotal = useMemo(() => {
+    return filteredBills.reduce((acc, b) => acc + b.amount, 0);
+  }, [filteredBills]);
+
+  const handleDatePreset = (preset: 'today' | 'thisWeek' | 'thisMonth' | 'next30') => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const formatISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    if (preset === 'today') {
+      const today = formatISO(now);
+      setStartDate(today);
+      setEndDate(today);
+    } else if (preset === 'thisWeek') {
+      const first = new Date(now);
+      const day = first.getDay();
+      const diff = first.getDate() - day + (day === 0 ? -6 : 1);
+      first.setDate(diff);
+      const last = new Date(first);
+      last.setDate(first.getDate() + 6);
+      setStartDate(formatISO(first));
+      setEndDate(formatISO(last));
+    } else if (preset === 'thisMonth') {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      setStartDate(formatISO(first));
+      setEndDate(formatISO(last));
+    } else if (preset === 'next30') {
+      const end = new Date(now);
+      end.setDate(end.getDate() + 30);
+      setStartDate(formatISO(now));
+      setEndDate(formatISO(end));
+    }
+  };
 
   const handleEdit = (bill: Bill) => {
     setBillToEdit(bill);
@@ -249,6 +301,149 @@ export function BillsView() {
             </select>
           </div>
         </div>
+
+        {/* Date Filter Bar */}
+        <div className="pt-3 border-t border-zinc-800/80 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-1.5 text-xs text-zinc-400 font-medium">
+              <Calendar className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Período:</span>
+            </div>
+
+            <select
+              value={dateField}
+              onChange={(e) => setDateField(e.target.value as 'dueDate' | 'paidAt')}
+              className="px-2.5 py-1.5 bg-zinc-950 border border-zinc-800 rounded-xl text-xs text-zinc-200 focus:outline-none focus:border-amber-500 cursor-pointer"
+            >
+              <option value="dueDate">Data de Vencimento</option>
+              <option value="paidAt">Data de Pagamento</option>
+            </select>
+
+            <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-2.5 py-1.5 focus-within:border-amber-500 transition-colors">
+              <span className="text-[11px] text-zinc-500 font-medium">De</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-transparent text-xs text-zinc-200 focus:outline-none [color-scheme:dark] cursor-pointer"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-800 rounded-xl px-2.5 py-1.5 focus-within:border-amber-500 transition-colors">
+              <span className="text-[11px] text-zinc-500 font-medium">Até</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-transparent text-xs text-zinc-200 focus:outline-none [color-scheme:dark] cursor-pointer"
+              />
+            </div>
+
+            {(startDate || endDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium flex items-center gap-1 transition-colors"
+                title="Limpar período"
+              >
+                <X className="w-3.5 h-3.5 text-zinc-400" />
+                Limpar datas
+              </button>
+            )}
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] text-zinc-500 font-medium hidden sm:inline">Atalhos:</span>
+            <button
+              type="button"
+              onClick={() => handleDatePreset('today')}
+              className="px-2.5 py-1 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDatePreset('thisWeek')}
+              className="px-2.5 py-1 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Esta Semana
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDatePreset('thisMonth')}
+              className="px-2.5 py-1 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Este Mês
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDatePreset('next30')}
+              className="px-2.5 py-1 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800/80 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Próx. 30 Dias
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Results Summary Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-zinc-400 px-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span>
+            Mostrando <strong className="text-zinc-200">{filteredBills.length}</strong>{' '}
+            {filteredBills.length === 1 ? 'conta' : 'contas'}
+          </span>
+          <span className="text-zinc-600">•</span>
+          <span>
+            Total:{' '}
+            <strong className="text-amber-400 font-mono">{formatCurrency(filteredTotal)}</strong>
+          </span>
+          {(startDate || endDate) && (
+            <>
+              <span className="text-zinc-600">•</span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px]">
+                <Calendar className="w-3 h-3" />
+                {dateField === 'dueDate' ? 'Vencimento: ' : 'Pagamento: '}
+                {startDate && endDate
+                  ? `${formatDate(effectiveStart)} até ${formatDate(effectiveEnd)}`
+                  : startDate
+                  ? `a partir de ${formatDate(effectiveStart)}`
+                  : `até ${formatDate(effectiveEnd)}`}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStartDate('');
+                    setEndDate('');
+                  }}
+                  className="ml-1 hover:text-amber-200 transition-colors"
+                  title="Remover filtro de data"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            </>
+          )}
+        </div>
+
+        {(searchQuery || selectedCategory !== 'all' || activeTab !== 'all' || startDate || endDate) && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchQuery('');
+              setSelectedCategory('all');
+              setActiveTab('all');
+              setStartDate('');
+              setEndDate('');
+            }}
+            className="text-[11px] text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors self-start sm:self-auto"
+          >
+            Limpar todos os filtros
+          </button>
+        )}
       </div>
 
       {/* Bills Cards Grid / List */}
@@ -257,6 +452,28 @@ export function BillsView() {
           <div className="p-16 bg-zinc-900/60 border border-zinc-800 rounded-2xl text-center text-zinc-500 text-sm">
             <ReceiptText className="w-10 h-10 mx-auto mb-2 opacity-40" />
             <p>Nenhuma conta encontrada com os filtros selecionados.</p>
+            {(startDate || endDate) && (
+              <p className="text-xs text-zinc-400 mt-1">
+                Período ({dateField === 'dueDate' ? 'Vencimento' : 'Pagamento'}):{' '}
+                {startDate ? formatDate(effectiveStart) : 'Início'} até{' '}
+                {endDate ? formatDate(effectiveEnd) : 'Fim'}
+              </p>
+            )}
+            {(searchQuery || selectedCategory !== 'all' || activeTab !== 'all' || startDate || endDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCategory('all');
+                  setActiveTab('all');
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="mt-3 px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs rounded-xl transition-colors font-medium"
+              >
+                Limpar filtros
+              </button>
+            )}
           </div>
         ) : (
           filteredBills.map((bill) => {
