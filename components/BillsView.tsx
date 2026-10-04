@@ -7,6 +7,8 @@ import { formatCurrency, formatDate, getDueDateStatus } from '@/lib/utils';
 import { CategoryIcon } from './CategoryIcon';
 import { BillModal } from './modals/BillModal';
 import { PayBillModal } from './modals/PayBillModal';
+import { BarcodeScannerModal } from './modals/BarcodeScannerModal';
+import { BoletoData } from '@/lib/boleto/parser';
 import {
   ReceiptText,
   Plus,
@@ -23,6 +25,7 @@ import {
   Search,
   Filter,
   X,
+  Camera,
 } from 'lucide-react';
 
 export function BillsView() {
@@ -50,6 +53,8 @@ export function BillsView() {
   const [isBillModalOpen, setIsBillModalOpen] = useState(false);
   const [billToEdit, setBillToEdit] = useState<Bill | null>(null);
   const [billToPay, setBillToPay] = useState<Bill | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [initialBillData, setInitialBillData] = useState<Partial<Bill> | null>(null);
 
   const effectiveStart = startDate && endDate && startDate > endDate ? endDate : startDate;
   const effectiveEnd = startDate && endDate && startDate > endDate ? startDate : endDate;
@@ -156,6 +161,30 @@ export function BillsView() {
     alert('Código copiado para a área de transferência!');
   };
 
+  const handleScanBoleto = (data: BoletoData) => {
+    let matchedCatId = '';
+    if (data.categoryKeyword) {
+      const match = categories.find(
+        (c) =>
+          c.name.toLowerCase().includes(data.categoryKeyword!.toLowerCase()) ||
+          c.id.toLowerCase().includes(data.categoryKeyword!.toLowerCase())
+      );
+      if (match) matchedCatId = match.id;
+    }
+
+    setInitialBillData({
+      title: data.titleSuggestion || (data.recipient ? `Boleto ${data.recipient}` : 'Nova Conta a Pagar'),
+      amount: data.amount || 0,
+      dueDate: data.dueDate || new Date().toISOString().split('T')[0],
+      recipient: data.recipient || '',
+      barcode: data.formattedCode || data.code || '',
+      categoryId: matchedCatId,
+    });
+    setBillToEdit(null);
+    setIsScannerOpen(false);
+    setIsBillModalOpen(true);
+  };
+
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
@@ -169,16 +198,27 @@ export function BillsView() {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setBillToEdit(null);
-            setIsBillModalOpen(true);
-          }}
-          className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-amber-950/40"
-        >
-          <Plus className="w-4 h-4" />
-          Cadastrar Conta a Pagar
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => setIsScannerOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-400 border border-amber-500/40 hover:border-amber-500/60 text-xs font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer active:scale-95"
+          >
+            <Camera className="w-4 h-4" />
+            Ler Boleto
+          </button>
+
+          <button
+            onClick={() => {
+              setBillToEdit(null);
+              setInitialBillData(null);
+              setIsBillModalOpen(true);
+            }}
+            className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-zinc-950 text-xs font-bold flex items-center gap-1.5 transition-all shadow-lg shadow-amber-950/40 cursor-pointer active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            Cadastrar Conta a Pagar
+          </button>
+        </div>
       </div>
 
       {/* Metric Cards */}
@@ -613,13 +653,22 @@ export function BillsView() {
       {/* Modals */}
       <BillModal
         isOpen={isBillModalOpen}
-        onClose={() => setIsBillModalOpen(false)}
+        onClose={() => {
+          setIsBillModalOpen(false);
+          setInitialBillData(null);
+        }}
         billToEdit={billToEdit}
+        initialData={initialBillData}
       />
       <PayBillModal
         isOpen={!!billToPay}
         onClose={() => setBillToPay(null)}
         bill={billToPay}
+      />
+      <BarcodeScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScan={handleScanBoleto}
       />
     </div>
   );

@@ -13,9 +13,10 @@ interface BillModalProps {
   isOpen: boolean;
   onClose: () => void;
   billToEdit?: Bill | null;
+  initialData?: Partial<Bill> | null;
 }
 
-export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
+export function BillModal({ isOpen, onClose, billToEdit, initialData }: BillModalProps) {
   const { addBill, editBill, categories } = useFinance();
 
   const [title, setTitle] = useState('');
@@ -33,8 +34,9 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
   const [autoFillNotice, setAutoFillNotice] = useState<string | null>(null);
 
   const applyParsedBarcode = (result: ParsedBarcodeResult) => {
-    if (result.barcode) {
-      setBarcode(result.barcode);
+    const rawBarcode = result.formattedCode || result.barcode || result.code;
+    if (rawBarcode) {
+      setBarcode(rawBarcode);
     }
     if (result.amount && result.amount > 0) {
       setAmount(result.amount);
@@ -109,6 +111,21 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
       setNotes(billToEdit.notes || '');
       setIsRecurring(!!billToEdit.isRecurring);
       setRecurrencePeriod(billToEdit.recurrencePeriod || 'monthly');
+    } else if (initialData) {
+      setTitle(initialData.title || '');
+      setAmount(initialData.amount || 0);
+      setDueDate(initialData.dueDate || new Date().toISOString().split('T')[0]);
+      setRecipient(initialData.recipient || '');
+      setBarcode(initialData.barcode || '');
+      setNotes(initialData.notes || '');
+      setIsRecurring(!!initialData.isRecurring);
+      setRecurrencePeriod(initialData.recurrencePeriod || 'monthly');
+      const expenseCats = categories.filter((c) => c.type === 'expense' || c.type === 'both');
+      if (initialData.categoryId) {
+        setCategoryId(initialData.categoryId);
+      } else if (expenseCats.length > 0) {
+        setCategoryId(expenseCats[0].id);
+      }
     } else {
       setTitle('');
       setAmount(0);
@@ -121,7 +138,7 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
       const expenseCats = categories.filter((c) => c.type === 'expense' || c.type === 'both');
       if (expenseCats.length > 0) setCategoryId(expenseCats[0].id);
     }
-  }, [billToEdit, categories, isOpen]);
+  }, [billToEdit, initialData, categories, isOpen]);
 
   const expenseCategories = categories.filter((c) => c.type === 'expense' || c.type === 'both');
 
@@ -269,10 +286,10 @@ export function BillModal({ isOpen, onClose, billToEdit }: BillModalProps) {
               type="button"
               onClick={() => setIsScannerOpen(true)}
               className="px-3.5 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:border-amber-500/50 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer shadow-sm active:scale-95"
-              title="Abrir câmera para escanear código de barras"
+              title="Abrir câmera ou digitar para ler boleto"
             >
               <Camera className="w-4 h-4" />
-              <span>Escanear</span>
+              <span>Ler Boleto</span>
             </button>
           </div>
         </div>
